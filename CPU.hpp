@@ -21,14 +21,7 @@ FLAGS REGISTER FOR LOWER 8 BITS OF AF
 /*
 Individual register masks
 */
-#define A	(unsigned char) ((AF & 0xFF00) >> 8)
-#define F	(unsigned char) AF & 0x00FF
-#define B	(unsigned char) ((BC & 0xFF00) >> 8)
-#define C	(unsigned char) BC & 0x00FF
-#define D	(unsigned char) ((DE & 0xFF00) >> 8)
-#define E	(unsigned char) DE & 0x00FF
-#define H	(unsigned char) ((HL & 0xFF00) >> 8)
-#define L	(unsigned char) HL & 0x00FF
+
 
 /**
  * MODE determines which register is chosen
@@ -49,6 +42,16 @@ public:
 	unsigned short HL; // HL
 	unsigned short SP; // Stack pointer
 	unsigned short PC; // Program counter
+
+	// Getters for individual registers
+	inline unsigned char A() const { return (AF & 0xFF00) >> 8;}
+	inline unsigned char F() const { return ( AF & 0x00FF);}
+	inline unsigned char B() const { return ( (BC & 0xFF00) >> 8);}
+	inline unsigned char C() const { return ( BC & 0x00FF);}
+	inline unsigned char D() const { return ( (DE & 0xFF00) >> 8);}
+	inline unsigned char E() const { return ( DE & 0x00FF);}
+	inline unsigned char H() const { return ( (HL & 0xFF00) >> 8);}
+	inline unsigned char L() const { return ( HL & 0x00FF);}
 
 	// Memory
 	unsigned char memory[465535]; // 16 bit address bus
@@ -85,7 +88,7 @@ void CPU::executeOpcode(short opcode){
 			switch(opcode & 0x00FF){
 				case 0x00: PC++; break;
 				case 0x01: loadReg(memory[PC+2], memory[PC+1], BC); PC+= 3; break;
-				case 0x02: storeReg(A, BC); PC++; break;
+				case 0x02: storeReg(A(), BC); PC++; break;
 				case 0x03: incReg(1, BC, PAIR); PC++; break;
 				case 0x04: incReg(1, BC, HIGH); PC++; break;
 				case 0x05: incReg(-1, BC, HIGH); PC++; break;
@@ -141,9 +144,9 @@ void CPU::incReg(int amount, unsigned short &reg, MODE mode){
 	}
 }
 
-void rotate(unsigned short &reg, bool carry, DIRECTION d){
+void CPU::rotate(unsigned short &reg, bool carry, DIRECTION d){
 	// CURRENTLY ONLY IMPLEMENTATION OF RLCA
-	unsigned char regA = AF &
+	unsigned char regA =A();
 
 }
 
