@@ -95,12 +95,13 @@ void CPU::executeOpcode(short opcode){
 				case 0x05: incReg(-1, BC, HIGH); PC++; break;
 				case 0x06: loadReg(memory[PC+1], (BC&0x00FF), BC);PC+=2; break;
 				case 0x07: rotate(AF, true, LEFT); PC+=1; break;
-				case 0x08: 
+				case 0x08: {
 					unsigned short nn = (memory[PC + 1] << 8)| memory[PC];
 					storeReg((SP & 0x00FF), nn);
 					storeReg(((SP & 0xFF00) >> 8), (nn + 1));
 					PC += 3; 
 					break;
+				}
 				case 0x09: addPairs(HL, BC); PC++; break;
 				default: printf("Unknown opcode: 0x%X\n", opcode); break;
 			}
