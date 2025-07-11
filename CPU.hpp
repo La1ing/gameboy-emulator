@@ -15,7 +15,7 @@ FLAGS REGISTER FOR LOWER 8 BITS OF AF
 #define zFlag	AF & 0b000000001000000
 #define nFlag	AF & 0b000000000100000
 #define hFlag	AF & 0b000000000010000
-#define nFlag	AF & 0b000000000001000
+#define cFlag	AF & 0b000000000001000
 
 
 /*
@@ -65,6 +65,7 @@ public:
 	void storeReg(unsigned char reg, unsigned short loc);
 	void incReg(int amount, unsigned short &reg, MODE mode);
 	void rotate(unsigned short &reg, bool carry, DIRECTION d);
+	void addPairs(unsigned short &storeReg, unsigned short &reg);
 };
 
 void CPU::initialize(){
@@ -93,8 +94,14 @@ void CPU::executeOpcode(short opcode){
 				case 0x04: incReg(1, BC, HIGH); PC++; break;
 				case 0x05: incReg(-1, BC, HIGH); PC++; break;
 				case 0x06: loadReg(memory[PC+1], (BC&0x00FF), BC);PC+=2; break;
-				case 0x07: PC+=1; break;
-
+				case 0x07: rotate(AF, true, LEFT); PC+=1; break;
+				case 0x08: 
+					unsigned short nn = (memory[PC + 1] << 8)| memory[PC];
+					storeReg((SP & 0x00FF), nn);
+					storeReg(((SP & 0xFF00) >> 8), (nn + 1));
+					PC += 3; 
+					break;
+				case 0x09: addPairs(HL, BC); PC++; break;
 				default: printf("Unknown opcode: 0x%X\n", opcode); break;
 			}
 			break;
@@ -110,7 +117,7 @@ void CPU::executeOpcode(short opcode){
 /**
  * Loads data into register
  */
-void CPU::loadReg(unsigned char low, unsigned char high, unsigned short &reg){
+void CPU::loadReg(unsigned char high, unsigned char low, unsigned short &reg){
 	reg = (high << 8) | low;
 }
 
@@ -147,7 +154,30 @@ void CPU::incReg(int amount, unsigned short &reg, MODE mode){
 void CPU::rotate(unsigned short &reg, bool carry, DIRECTION d){
 	// CURRENTLY ONLY IMPLEMENTATION OF RLCA
 	unsigned char regA =A();
+	unsigned char newRegA = regA << 1;
+	newRegA |=  (regA & 0b10000000) >> 7;
+	if ((regA & 0b10000000) >> 7 == 1){
+		AF |= cFlag;
+	} else {
+		AF &= ~cFlag;
+	}
+	AF &= ~(zFlag | nFlag | hFlag);
+	AF = (newRegA << 8) | F(); 
+}
 
+void CPU::addPairs(unsigned short &storeReg, unsigned short &reg){
+	AF &= ~nFlag; // Unset negative flag
+	if ((storeReg & 0x0B) + (reg & 0x0B) > 0x0B){
+		AF |= hFlag;
+	} else {
+		AF &= ~hFlag;
+	}
+	if ((storeReg & 0x0F) + (reg & 0x0F) > 0x0F){
+		AF |= cFlag;
+	} else {
+		AF &= ~cFlag;
+	}
+	storeReg = storeReg + reg;
 }
 
 #endif
