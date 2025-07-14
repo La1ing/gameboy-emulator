@@ -6,7 +6,7 @@
 #include <cstdlib>
 
 /*
-FLAGS REGISTER FOR LOWER 8 BITS OF AF
+FLAGS REGISTER FOR LOWER 8 BITS OF AF.
 \param 7:zFlag 	zero flag
 \param 6:nFlag 	subtraction flag (BCD)
 \param 5:hFlag 	half carry flag (BCD)
@@ -18,10 +18,10 @@ FLAGS REGISTER FOR LOWER 8 BITS OF AF
 #define cFlag	0b0000000000010000
 
 /**
- * MODE determines which register is chosen
- * \param HIGH Higher register
- * \param LOW lower regier
- * \param PAIR both registers
+ * MODE determines which register is chosen.
+ * \param HIGH Higher register.
+ * \param LOW lower register.
+ * \param PAIR both registers.
  */
 enum MODE {HIGH, LOW, PAIR};
 
@@ -58,7 +58,7 @@ public:
 	void loadReg(unsigned char high, unsigned char low, unsigned short &reg);
 	void storeReg(unsigned char reg, unsigned short loc);
 	void incReg(int amount, unsigned short &reg, MODE mode);
-	void rotate(unsigned short &reg, bool carry, DIRECTION d);
+	void rotate(unsigned short &regPair, bool carry, DIRECTION d, MODE mode);
 	void addPairs(unsigned short &storeReg, unsigned short &reg);
 };
 
@@ -89,8 +89,8 @@ void CPU::executeOpcode(short input){
 				case 0x03: incReg(1, BC, PAIR); PC++; break;
 				case 0x04: incReg(1, BC, HIGH); PC++; break;
 				case 0x05: incReg(-1, BC, HIGH); PC++; break;
-				case 0x06: loadReg(memory[PC+1], (BC&0x00FF), BC);PC+=2; break;
-				case 0x07: rotate(AF, true, LEFT); PC+=1; break;
+				case 0x06: loadReg(memory[PC+1], C(), BC);PC+=2; break;
+				case 0x07: rotate(AF, true, LEFT, HIGH); PC+=1; break;
 				case 0x08: {
 					unsigned short nn = (memory[PC + 1] << 8)| memory[PC];
 					storeReg((SP & 0x00FF), PC);
@@ -99,6 +99,12 @@ void CPU::executeOpcode(short input){
 					break;
 				}
 				case 0x09: addPairs(HL, BC); PC++; break;
+				case 0x0A: loadReg(memory[BC], (AF & 0xFF), AF); PC++; break;
+				case 0x0B: incReg(-1, BC, PAIR); PC++; break;
+				case 0x0C: incReg(1, BC, LOW); PC++; break;
+				case 0x0D: incReg(-1, BC, LOW); PC++; break;
+				case 0x0E: loadReg(B(), memory[PC+1], BC); PC+=2; break;
+				case 0x0F: PC++; break;
 				default: printf("Unknown opcode: 0x%X\n", opcode); break;
 			}
 			break;
@@ -112,22 +118,22 @@ void CPU::executeOpcode(short input){
 }
 
 /**
- * Loads data into register
+ * Loads data into register.
  */
 void CPU::loadReg(unsigned char high, unsigned char low, unsigned short &reg){
 	reg = (high << 8) | low;
 }
 
 /**
- * Stores register into memory
+ * Stores register into memory.
  */
 void CPU::storeReg(unsigned char reg, unsigned short loc){
 	memory[loc] = reg;
 }
 
 /**
- * Increments registers
- * \param mode determines if higher/lower/both register/s are incremented
+ * Increments registers.
+ * \param mode determines if higher/lower/both register/s are incremented.
  */
 void CPU::incReg(int amount, unsigned short &reg, MODE mode){
 	if (mode == PAIR){
@@ -162,20 +168,48 @@ void CPU::incReg(int amount, unsigned short &reg, MODE mode){
 	}
 }
 
-void CPU::rotate(unsigned short &reg, bool carry, DIRECTION d){
-	// CURRENTLY ONLY IMPLEMENTATION OF RLCA
-	unsigned char regA =A();
-	unsigned char newRegA = regA << 1;
-	newRegA |=  (regA & 0b10000000) >> 7;
-	if ((regA & 0b10000000) >> 7 == 1){
-		AF |= cFlag;
+/**
+ * Rotate register `LEFT` or `RIGHT`.
+ * 
+ * \param reg Target register pair.
+ * \param useCarry True if uses carry for rotation, false if only last bit is copied to carry.
+ * \param d Rotate `LEFT` or `RIGHT`.
+ * \param mode Register that is rotated.
+ */
+void CPU::rotate(unsigned short &regPair, bool useCarry, DIRECTION d, MODE mode){
+	if (mode == PAIR){
+		// TODO: rotate pair
 	} else {
-		AF &= ~cFlag;
+		int shift = (mode == HIGH)? 8:0; // Shift of 8 if on the higher bit; 0 otherwise
+		unsigned char reg = (regPair >> shift) & 0x00FF; // Shifting register pair then masking the lower register to get the register
+		unsigned char newReg = reg << 1;
+		newReg = (newReg & 0b11111110) | (reg & 0b10000000) >> 7;
+		if ((reg & 0b10000000) >> 7 == 1){
+			AF |= cFlag;
+		} else {
+			AF &= ~cFlag;
+		}
+		AF &= ~(zFlag | nFlag | hFlag);
+		regPair = (newReg << shift) | regPair & ((shift==8)?0x00FF:0xFF00); //other (unchanged) register pair is opposite mask of rotated register
 	}
-	AF &= ~(zFlag | nFlag | hFlag);
-	AF = (newRegA << 8) | F(); 
+	
+
+	// CURRENTLY ONLY IMPLEMENTATION OF RLCA
+	// unsigned char regA = A();
+	// unsigned char newRegA = regA << 1;
+	// newRegA |=  (regA & 0b10000000) >> 7;
+	// if ((regA & 0b10000000) >> 7 == 1){
+	// 	AF |= cFlag;
+	// } else {
+	// 	AF &= ~cFlag;
+	// }
+	// AF &= ~(zFlag | nFlag | hFlag);
+	// AF = (newRegA << 8) | F(); 
 }
 
+/**
+ * Adds registers `storeReg` and  `reg` and stores result in `storeReg`.
+ */
 void CPU::addPairs(unsigned short &storeReg, unsigned short &reg){
 	AF &= ~nFlag; // Unset negative flag
 	unsigned short halfMask = 0b111111111111; // Mask for first 11 bits of registers
