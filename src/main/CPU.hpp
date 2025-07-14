@@ -7,21 +7,15 @@
 
 /*
 FLAGS REGISTER FOR LOWER 8 BITS OF AF
-7: zFlag | zero flag
-6: nFlag | subtraction flag (BCD)
-5: hFlag | half carry flag (BCD)
-4: cFlag | carry flag
+\param 7:zFlag 	zero flag
+\param 6:nFlag 	subtraction flag (BCD)
+\param 5:hFlag 	half carry flag (BCD)
+\param 4:cFlag 	carry flag
 */
-#define zFlag	AF & 0b000000001000000
-#define nFlag	AF & 0b000000000100000
-#define hFlag	AF & 0b000000000010000
-#define cFlag	AF & 0b000000000001000
-
-
-/*
-Individual register masks
-*/
-
+#define zFlag	0b0000000010000000
+#define nFlag	0b0000000001000000
+#define hFlag	0b0000000000100000
+#define cFlag	0b0000000000010000
 
 /**
  * MODE determines which register is chosen
@@ -77,7 +71,9 @@ void CPU::initialize(){
 	PC = 0x00; // Stating point of ROM
 }
 
-void CPU::executeOpcode(short opcode){
+void CPU::executeOpcode(short input){
+	opcode = input;
+
 	char x = opcode & 0b11000000; // 1st octal digit
 	char y = opcode & 0b00111000; // 2nd octal digit
 	char z = opcode & 0b00000111; // 3rd octal digit
@@ -137,8 +133,8 @@ void CPU::incReg(int amount, unsigned short &reg, MODE mode){
 	if (mode == PAIR){
 		reg += amount;
 	} else {
-		unsigned short mask = (mode == HIGH)? 0xFF00:0x00FF;
-		unsigned char halfReg = reg & mask;
+		int shift = (mode == HIGH)? 8:0; // Shift of 8 if on the higher bit; 0 otherwise
+		unsigned char halfReg = (reg >> shift) & 0x00FF; // Shifting register pair then masking the lower register to get the register
 		if (amount > 0){
 			AF |= (halfReg == 0xFF)? zFlag: 0;
 			AF &= ~nFlag; // Unset nFlag
@@ -149,6 +145,13 @@ void CPU::incReg(int amount, unsigned short &reg, MODE mode){
 			AF |= (halfReg == 0)? hFlag: 0;
 		}
 		halfReg += amount;
+		unsigned short mask = (mode == HIGH)? 0x00FF:0xFF00; // Mask for other register
+		reg = (halfReg << shift) | (reg & mask);
+		if (mode == HIGH) {
+			reg = (halfReg << 8) | (reg & 0x00FF);
+		} else {
+			reg = (reg & 0x00FF) | halfReg;
+		}
 	}
 }
 
