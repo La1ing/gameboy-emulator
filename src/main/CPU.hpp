@@ -136,13 +136,20 @@ void CPU::incReg(int amount, unsigned short &reg, MODE mode){
 		int shift = (mode == HIGH)? 8:0; // Shift of 8 if on the higher bit; 0 otherwise
 		unsigned char halfReg = (reg >> shift) & 0x00FF; // Shifting register pair then masking the lower register to get the register
 		if (amount > 0){
-			AF |= (halfReg == 0xFF)? zFlag: 0;
+			if (halfReg == 0xFF) {
+				AF |= (zFlag | hFlag); // set zero / half carry
+			} else {
+				AF &= ~(zFlag | hFlag); // unset otherwise
+			}
 			AF &= ~nFlag; // Unset nFlag
-			AF |= (halfReg == 0xFF)? hFlag: 0;
 		} else {
-			AF |= (halfReg == 1)? zFlag: 0;
+			AF &= ~ (zFlag | hFlag); // unset both flags temporarily
+			if (halfReg == 1){
+				AF |= zFlag;
+			} else  if (halfReg == 0){
+				AF |= hFlag;
+			}
 			AF |= nFlag; // set nFlag
-			AF |= (halfReg == 0)? hFlag: 0;
 		}
 		halfReg += amount;
 		unsigned short mask = (mode == HIGH)? 0x00FF:0xFF00; // Mask for other register
