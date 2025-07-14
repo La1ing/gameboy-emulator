@@ -93,8 +93,8 @@ void CPU::executeOpcode(short input){
 				case 0x07: rotate(AF, true, LEFT); PC+=1; break;
 				case 0x08: {
 					unsigned short nn = (memory[PC + 1] << 8)| memory[PC];
-					storeReg((SP & 0x00FF), nn);
-					storeReg(((SP & 0xFF00) >> 8), (nn + 1));
+					storeReg((SP & 0x00FF), PC);
+					storeReg(((SP & 0xFF00) >> 8), PC + 1);
 					PC += 3; 
 					break;
 				}
@@ -178,12 +178,13 @@ void CPU::rotate(unsigned short &reg, bool carry, DIRECTION d){
 
 void CPU::addPairs(unsigned short &storeReg, unsigned short &reg){
 	AF &= ~nFlag; // Unset negative flag
-	if ((storeReg & 0x0B) + (reg & 0x0B) > 0x0B){
+	unsigned short halfMask = 0b111111111111; // Mask for first 11 bits of registers
+	if ((storeReg & halfMask) + (reg & halfMask) > halfMask){ // Checking for half Carry-over (bit 11 carry)
 		AF |= hFlag;
 	} else {
 		AF &= ~hFlag;
 	}
-	if ((storeReg & 0x0F) + (reg & 0x0F) > 0x0F){
+	if (storeReg + reg > 0xFFFF){ // Checking for carry-over
 		AF |= cFlag;
 	} else {
 		AF &= ~cFlag;
