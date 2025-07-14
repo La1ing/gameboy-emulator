@@ -65,6 +65,24 @@ TEST_CASE_METHOD(CPUTest, "0x04: increment B w/ overflow") {
     cpu.BC = 0xFF00; // Setting B register as 0x20
     cpu.executeOpcode(0x0004);
     REQUIRE(cpu.BC == 0x0000);
-    REQUIRE(cpu.AF == 0b0000000010100000); // Flag: set zero, HC; unset negative
+    REQUIRE(cpu.AF == 0b0000000010100000); // Flag: SET zero, HC | UNSET negative
+    REQUIRE(cpu.PC == 0x0001);
+}
+
+TEST_CASE_METHOD(CPUTest, "0x05: decrement B NO overflow (zero flag)") {
+    // cpu.AF = 0b0000000000000000; // Setting AF as negative flag
+    cpu.BC = 0x0100; // Setting B register as 0x01
+    cpu.executeOpcode(0x0005);
+    REQUIRE(cpu.BC == 0x0000);
+    REQUIRE(cpu.AF == 0b0000000011000000); // Flag: SET zero, negative | UNSET HC
+    REQUIRE(cpu.PC == 0x0001);
+}
+
+TEST_CASE_METHOD(CPUTest, "0x05: decrement B w/ overflow") {
+    cpu.AF = 0b0000000010000000; // Setting AF as zero flag
+    cpu.BC = 0x0000; // Setting B register as 0x01
+    cpu.executeOpcode(0x0005);
+    REQUIRE(cpu.BC == 0xFF00);
+    REQUIRE(cpu.AF == 0b0000000001100000); // Flag: SET negative, HC | UNSET zero
     REQUIRE(cpu.PC == 0x0001);
 }
