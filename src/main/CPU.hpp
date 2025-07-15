@@ -92,10 +92,9 @@ void CPU::executeOpcode(short input){
 				}
 				switch(opcode & 0x000F){
 					case 0x00: PC++; break;
-					case 0x01:
-						loadReg(memory[PC+2], memory[PC+1], *ddReg); PC+= 3; break;
+					case 0x01: loadReg(memory[PC+2], memory[PC+1], *ddReg); PC+= 3; break;
 					case 0x02: storeReg(A(), BC); PC++; break;
-					case 0x03: incReg(1, BC, PAIR); PC++; break;
+					case 0x03: incReg(1, *ddReg, PAIR); PC++; break;
 					case 0x04: incReg(1, BC, HIGH); PC++; break;
 					case 0x05: incReg(-1, BC, HIGH); PC++; break;
 					case 0x06: loadReg(memory[PC+1], C(), BC);PC+=2; break;
