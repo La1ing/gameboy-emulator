@@ -29,10 +29,10 @@ TEST_CASE_METHOD(CPUTest, "0x*1:(LD dd, u16) load 2 bytes of immediate data") {
     // load data for SP
     cpu.memory[0x0A] = 0x27;
     cpu.memory[0x0B] = 0x72;
-    cpu.executeOpcode(0x0001);
-    cpu.executeOpcode(0x0011);
-    cpu.executeOpcode(0x0021);
-    cpu.executeOpcode(0x0031);
+    cpu.executeOpcode(0x0001); // BC
+    cpu.executeOpcode(0x0011); // DE
+    cpu.executeOpcode(0x0021); // HL
+    cpu.executeOpcode(0x0031); // SP
     REQUIRE(cpu.BC == 0x1337);
     REQUIRE(cpu.DE == 0xFCBC);
     REQUIRE(cpu.HL == 0xABCD);
@@ -49,13 +49,22 @@ TEST_CASE_METHOD(CPUTest, "0x02:(LD BC, A) register stored in correct location i
     REQUIRE(cpu.PC == 0x0001);
 }
 
-TEST_CASE_METHOD(CPUTest, "0x03:(LB (BC), A) increment BC NO overflow") {
+TEST_CASE_METHOD(CPUTest, "0x03:(LB (dd), A) increment dd") {
     cpu.AF = 0x0000;
     cpu.BC = 0x000F;
+    cpu.DE = 0xFFFF;
+    cpu.HL = 0x9090;
+    cpu.SP = 0xAFAD;
     cpu.executeOpcode(0x03);
+    cpu.executeOpcode(0x013);
+    cpu.executeOpcode(0x23);
+    cpu.executeOpcode(0x33);
     REQUIRE(cpu.BC == 0x0010);
+    REQUIRE(cpu.DE == 0x0000);
+    REQUIRE(cpu.HL == 0x9091);
+    REQUIRE(cpu.SP == 0xAFAE);
     REQUIRE(cpu.AF == 0x0000); // No flags are modified
-    REQUIRE(cpu.PC == 0x0001);
+    REQUIRE(cpu.PC == 0x0004);
 }
 
 TEST_CASE_METHOD(CPUTest, "0x03:(INC BC) increment B w/ overflow") {
