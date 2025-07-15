@@ -15,13 +15,29 @@ TEST_CASE_METHOD(CPUTest, "0x00:(NOP) correctly increment PC") {
     REQUIRE(cpu.PC == 0x0001);
 }
 
-TEST_CASE_METHOD(CPUTest, "0x01:(LB BC, u16) load 2 bytes of immediate data") {
+TEST_CASE_METHOD(CPUTest, "0x*1:(LD dd, u16) load 2 bytes of immediate data") {
     cpu.PC = 0x00; // Start PC at 0
+    // load data for BC
     cpu.memory[0x01] = 0x37;
     cpu.memory[0x02] = 0x13;
+    // load data for DE
+    cpu.memory[0x04] = 0xBC;
+    cpu.memory[0x05] = 0xFC;
+    // load data for HL
+    cpu.memory[0x07] = 0xCD;
+    cpu.memory[0x08] = 0xAB;
+    // load data for SP
+    cpu.memory[0x0A] = 0x27;
+    cpu.memory[0x0B] = 0x72;
     cpu.executeOpcode(0x0001);
+    cpu.executeOpcode(0x0011);
+    cpu.executeOpcode(0x0021);
+    cpu.executeOpcode(0x0031);
     REQUIRE(cpu.BC == 0x1337);
-    REQUIRE(cpu.PC == 0x03);
+    REQUIRE(cpu.DE == 0xFCBC);
+    REQUIRE(cpu.HL == 0xABCD);
+    REQUIRE(cpu.SP == 0x7227);
+    REQUIRE(cpu.PC == 0x0C);
 }
 
 TEST_CASE_METHOD(CPUTest, "0x02:(LD BC, A) register stored in correct location in memory") {
