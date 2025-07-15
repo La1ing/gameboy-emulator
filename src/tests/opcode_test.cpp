@@ -174,10 +174,19 @@ TEST_CASE_METHOD(CPUTest, "0x0A:(LD A, (BC)) loading memory[BC] into A") {
 
 TEST_CASE_METHOD(CPUTest, "0x0B:(DEC BC) decrement pair BC") {
     cpu.BC = 0x235F;
+    cpu.DE = 0x1234;
+    cpu.HL = 0x4312;
+    cpu.SP = 0xFFFF;
     cpu.executeOpcode(0x000B);
+    cpu.executeOpcode(0x001B);
+    cpu.executeOpcode(0x002B);
+    cpu.executeOpcode(0x003B);
     REQUIRE(cpu.BC == 0x235E);
+    REQUIRE(cpu.DE == 0x1233);
+    REQUIRE(cpu.HL == 0x4311);
+    REQUIRE(cpu.SP == 0xFFFE);
     REQUIRE(cpu.AF == 0x0000); // no flags set
-    REQUIRE(cpu.PC == 1);
+    REQUIRE(cpu.PC == 4);
 } 
 
 TEST_CASE_METHOD(CPUTest, "0x0C:(INC C) increment register C") {
