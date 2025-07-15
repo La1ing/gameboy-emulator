@@ -108,7 +108,7 @@ void CPU::executeOpcode(short input){
 					}
 					case 0x09: addPairs(HL, *ddReg); PC++; break;
 					case 0x0A: loadReg(memory[BC], (AF & 0xFF), AF); PC++; break;
-					case 0x0B: incReg(-1, BC, PAIR); PC++; break;
+					case 0x0B: incReg(-1, *ddReg, PAIR); PC++; break;
 					case 0x0C: incReg(1, BC, LOW); PC++; break;
 					case 0x0D: incReg(-1, BC, LOW); PC++; break;
 					case 0x0E: loadReg(B(), memory[PC+1], BC); PC+=2; break;
