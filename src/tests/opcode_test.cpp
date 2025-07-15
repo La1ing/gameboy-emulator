@@ -95,7 +95,7 @@ TEST_CASE_METHOD(CPUTest, "0x06:(LD B, u8) Bloading 8-bit immediate data into B"
     REQUIRE(cpu.PC == 0x0002);
 }
 
-TEST_CASE_METHOD(CPUTest, "0x07:(RLCA) rotating register A") {
+TEST_CASE_METHOD(CPUTest, "0x07:(RLCA) rotating register A left") {
     cpu.AF = 0x8500 | zFlag | nFlag | hFlag ; // SetA at 0x85 (0b10000101), carry flag unset in F & other flags set
     cpu.executeOpcode(0x0007);
     REQUIRE(cpu.AF == (0x0B00 | cFlag)); // Register A = 0x0B (0b00001011) | carry flag set w/ rest unset
@@ -131,4 +131,52 @@ TEST_CASE_METHOD(CPUTest, "0x09:(ADD HL, BC), check full carry") {
     REQUIRE(cpu.BC == 0x8A23); // BC remains unchanged
     REQUIRE(cpu.AF == (hFlag | cFlag)); // Flags: SET HC, carrt | UNSET negative
     REQUIRE(cpu.PC == 0x0001);
+}
+
+TEST_CASE_METHOD(CPUTest, "0x0A:(LD A, (BC)) loading memory[BC] into A") {
+    cpu.BC = 0x0011;
+    cpu.memory[cpu.BC] = 0x5C;
+    cpu.executeOpcode(0x000A);
+    REQUIRE(cpu.AF == 0x5C00); // Register A = 0x2B (0b00101011) | carry flag set w/ rest unset
+    REQUIRE(cpu.PC == 1);
+} 
+
+TEST_CASE_METHOD(CPUTest, "0x0B:(DEC BC) decrement pair BC") {
+    cpu.BC = 0x235F;
+    cpu.executeOpcode(0x000B);
+    REQUIRE(cpu.BC == 0x235E);
+    REQUIRE(cpu.AF == 0x0000); // no flags set
+    REQUIRE(cpu.PC == 1);
+} 
+
+TEST_CASE_METHOD(CPUTest, "0x0C:(INC C) increment register C") {
+    cpu.BC = 0x23FF;
+    cpu.executeOpcode(0x000C);
+    REQUIRE(cpu.BC == 0x2300);
+    REQUIRE(cpu.AF == (zFlag | hFlag)); // set: zero and half-carry flag
+    REQUIRE(cpu.PC == 1);
+} 
+
+TEST_CASE_METHOD(CPUTest, "0x0D:(DEC C) decrement register C") {
+    cpu.BC = 0x4201;
+    cpu.executeOpcode(0x000D);
+    REQUIRE(cpu.BC == 0x4200);
+    REQUIRE(cpu.AF == (zFlag | nFlag)); // set: zero and negative flag
+    REQUIRE(cpu.PC == 1);
+} 
+
+TEST_CASE_METHOD(CPUTest, "0x0E:(LD C, d8) load immediate data into reg C") {
+    cpu.PC = 0x05;
+    cpu.BC = 0x0000;
+    cpu.memory[cpu.PC + 1] = 0x24;
+    cpu.executeOpcode(0x000E);
+    REQUIRE(cpu.BC == 0x0024);
+    REQUIRE(cpu.PC == 7);
+} 
+
+TEST_CASE_METHOD(CPUTest, "0x0F:(RRCA) rotating register A right") {
+    cpu.AF = 0x3B00 | zFlag | nFlag | hFlag | cFlag; // SetA at 0x95 (0b10010101), all flags set
+    cpu.executeOpcode(0x000F);
+    REQUIRE(cpu.AF == (0x9D00 | cFlag)); // Register A = 0x2B (0b00101011) | carry flag set w/ rest unset
+    REQUIRE(cpu.PC == 1);
 }
