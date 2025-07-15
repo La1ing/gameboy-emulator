@@ -90,7 +90,7 @@ void CPU::executeOpcode(short input){
 				case 0x04: incReg(1, BC, HIGH); PC++; break;
 				case 0x05: incReg(-1, BC, HIGH); PC++; break;
 				case 0x06: loadReg(memory[PC+1], C(), BC);PC+=2; break;
-				case 0x07: rotate(AF, true, LEFT, HIGH); PC+=1; break;
+				case 0x07: rotate(AF, true, LEFT, HIGH); PC++; break;
 				case 0x08: {
 					unsigned short nn = (memory[PC + 1] << 8)| memory[PC];
 					storeReg((SP & 0x00FF), PC);
@@ -104,7 +104,7 @@ void CPU::executeOpcode(short input){
 				case 0x0C: incReg(1, BC, LOW); PC++; break;
 				case 0x0D: incReg(-1, BC, LOW); PC++; break;
 				case 0x0E: loadReg(B(), memory[PC+1], BC); PC+=2; break;
-				case 0x0F: PC++; break;
+				case 0x0F: rotate(AF, true, RIGHT, HIGH); PC++; break;
 				default: printf("Unknown opcode: 0x%X\n", opcode); break;
 			}
 			break;
@@ -160,11 +160,6 @@ void CPU::incReg(int amount, unsigned short &reg, MODE mode){
 		halfReg += amount;
 		unsigned short mask = (mode == HIGH)? 0x00FF:0xFF00; // Mask for other register
 		reg = (halfReg << shift) | (reg & mask);
-		if (mode == HIGH) {
-			reg = (halfReg << 8) | (reg & 0x00FF);
-		} else {
-			reg = (reg & 0x00FF) | halfReg;
-		}
 	}
 }
 
@@ -182,29 +177,28 @@ void CPU::rotate(unsigned short &regPair, bool useCarry, DIRECTION d, MODE mode)
 	} else {
 		int shift = (mode == HIGH)? 8:0; // Shift of 8 if on the higher bit; 0 otherwise
 		unsigned char reg = (regPair >> shift) & 0x00FF; // Shifting register pair then masking the lower register to get the register
-		unsigned char newReg = reg << 1;
-		newReg = (newReg & 0b11111110) | (reg & 0b10000000) >> 7;
-		if ((reg & 0b10000000) >> 7 == 1){
-			AF |= cFlag;
-		} else {
-			AF &= ~cFlag;
+		unsigned char newReg;
+		if(d == LEFT){ // LEFT rotation
+			newReg = reg << 1;
+			newReg = (newReg & 0b11111110) | (reg & 0b10000000) >> 7; // first bit is set to last of original
+			if ((reg & 0b10000000) >> 7){
+				AF |= cFlag;
+			} else {
+				AF &= ~cFlag;
+			}
+
+		} else { // RIGHT rotation
+			newReg = reg >> 1;
+			newReg = (reg & 0x01) << 7 | (newReg & 0b01111111);
+			if (reg & 0x01){
+				AF |= cFlag;
+			} else {
+				AF &= ~cFlag;
+			}
 		}
 		AF &= ~(zFlag | nFlag | hFlag);
 		regPair = (newReg << shift) | regPair & ((shift==8)?0x00FF:0xFF00); //other (unchanged) register pair is opposite mask of rotated register
 	}
-	
-
-	// CURRENTLY ONLY IMPLEMENTATION OF RLCA
-	// unsigned char regA = A();
-	// unsigned char newRegA = regA << 1;
-	// newRegA |=  (regA & 0b10000000) >> 7;
-	// if ((regA & 0b10000000) >> 7 == 1){
-	// 	AF |= cFlag;
-	// } else {
-	// 	AF &= ~cFlag;
-	// }
-	// AF &= ~(zFlag | nFlag | hFlag);
-	// AF = (newRegA << 8) | F(); 
 }
 
 /**
