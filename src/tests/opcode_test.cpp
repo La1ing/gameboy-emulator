@@ -140,20 +140,26 @@ TEST_CASE_METHOD(CPUTest, "0x09:(ADD HL, BC), check half carry (@bit 11)") {
     cpu.AF = nFlag | cFlag; // Setting negative and carry flag
     cpu.HL = 0x8A23;
     cpu.BC = 0x0605;
+    cpu.DE = 0x0FFF;
+    cpu.SP = 0x0001;
     cpu.executeOpcode(0x0009);
     REQUIRE(cpu.HL == 0x9028); // Sum is stored in HL
     REQUIRE(cpu.BC == 0x0605); // BC remains unchanged
     REQUIRE(cpu.AF == hFlag); // Flags: SET HC | UNSET negative, carry
-    REQUIRE(cpu.PC == 0x0001);
+    cpu.executeOpcode(0x0019);
+    REQUIRE(cpu.HL == 0xA027);
+    REQUIRE(cpu.AF == hFlag); // Flags: set HC, rest unset
+    cpu.executeOpcode(0x0039);
+    REQUIRE(cpu.HL == 0xA028);
+    REQUIRE(cpu.AF == 0x0000); // All flags unset
+    REQUIRE(cpu.PC == 0x0003);
 }
 
-TEST_CASE_METHOD(CPUTest, "0x09:(ADD HL, BC), check full carry") {
+TEST_CASE_METHOD(CPUTest, "0x09:(ADD HL, HL), check full carry") {
     cpu.AF = nFlag; // Setting negative flag
     cpu.HL = 0x8A23;
-    cpu.BC = 0x8A23;
-    cpu.executeOpcode(0x0009);
+    cpu.executeOpcode(0x0029);
     REQUIRE(cpu.HL == 0x1446); // Sum is stored in HL
-    REQUIRE(cpu.BC == 0x8A23); // BC remains unchanged
     REQUIRE(cpu.AF == (hFlag | cFlag)); // Flags: SET HC, carrt | UNSET negative
     REQUIRE(cpu.PC == 0x0001);
 }

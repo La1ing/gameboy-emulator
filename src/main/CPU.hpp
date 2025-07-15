@@ -106,7 +106,7 @@ void CPU::executeOpcode(short input){
 						PC += 3; 
 						break;
 					}
-					case 0x09: addPairs(HL, BC); PC++; break;
+					case 0x09: addPairs(HL, *ddReg); PC++; break;
 					case 0x0A: loadReg(memory[BC], (AF & 0xFF), AF); PC++; break;
 					case 0x0B: incReg(-1, BC, PAIR); PC++; break;
 					case 0x0C: incReg(1, BC, LOW); PC++; break;
@@ -116,31 +116,6 @@ void CPU::executeOpcode(short input){
 					default: printf("Unknown opcode: 0x%X\n", opcode); break;
 				}
 			}
-			// switch(opcode & 0x00FF){
-			// 	case 0x00: PC++; break;
-			// 	case 0x01: loadReg(memory[PC+2], memory[PC+1], BC); PC+= 3; break;
-			// 	case 0x02: storeReg(A(), BC); PC++; break;
-			// 	case 0x03: incReg(1, BC, PAIR); PC++; break;
-			// 	case 0x04: incReg(1, BC, HIGH); PC++; break;
-			// 	case 0x05: incReg(-1, BC, HIGH); PC++; break;
-			// 	case 0x06: loadReg(memory[PC+1], C(), BC);PC+=2; break;
-			// 	case 0x07: rotate(AF, true, LEFT, HIGH); PC++; break;
-			// 	case 0x08: {
-			// 		unsigned short nn = (memory[PC + 1] << 8)| memory[PC];
-			// 		storeReg((SP & 0x00FF), PC);
-			// 		storeReg(((SP & 0xFF00) >> 8), PC + 1);
-			// 		PC += 3; 
-			// 		break;
-			// 	}
-			// 	case 0x09: addPairs(HL, BC); PC++; break;
-			// 	case 0x0A: loadReg(memory[BC], (AF & 0xFF), AF); PC++; break;
-			// 	case 0x0B: incReg(-1, BC, PAIR); PC++; break;
-			// 	case 0x0C: incReg(1, BC, LOW); PC++; break;
-			// 	case 0x0D: incReg(-1, BC, LOW); PC++; break;
-			// 	case 0x0E: loadReg(B(), memory[PC+1], BC); PC+=2; break;
-			// 	case 0x0F: rotate(AF, true, RIGHT, HIGH); PC++; break;
-			// 	default: printf("Unknown opcode: 0x%X\n", opcode); break;
-			// }
 			break;
 
 		case 0xCB00: // 16-bit opcodes
