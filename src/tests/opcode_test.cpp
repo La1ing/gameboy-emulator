@@ -40,13 +40,31 @@ TEST_CASE_METHOD(CPUTest, "0x*1:(LD dd, u16) load 2 bytes of immediate data") {
     REQUIRE(cpu.PC == 0x0C);
 }
 
-TEST_CASE_METHOD(CPUTest, "0x02:(LD BC, A) register stored in correct location in memory") {
+TEST_CASE_METHOD(CPUTest, "0x02:(LD (BC), A) register stored in correct location in memory") {
     // Setting BC to 0x205F and A to 0x3F
     cpu.BC = 0x205F;
     cpu.AF = (0x3F << 8) | cpu.F();
     cpu.executeOpcode(0x0002);
     REQUIRE(cpu.memory[0x205F] == 0x3F);
     REQUIRE(cpu.PC == 0x0001);
+}
+
+TEST_CASE_METHOD(CPUTest, "0x*2:(LD (dd), A) register stored in correct location in memory") {
+    cpu.DE = 0x207F;
+    cpu.HL = 0xFFFF;
+    cpu.AF = 0x3F00;
+    cpu.executeOpcode(0x0012);
+    REQUIRE(cpu.memory[0x207F] == 0x3F);
+    cpu.AF = 0x5600;
+    cpu.executeOpcode(0x0022);
+    REQUIRE(cpu.memory[0xFFFF] == 0x56);
+    REQUIRE(cpu.HL == 0x00);
+    cpu.AF = 0x4200;
+    cpu.HL = 0x4000;
+    cpu.executeOpcode(0x0032);
+    REQUIRE(cpu.memory[0x4000] == 0x42);
+    REQUIRE(cpu.HL == 0x3FFF);
+    REQUIRE(cpu.PC == 0x0003);
 }
 
 TEST_CASE_METHOD(CPUTest, "0x03:(LB (dd), A) increment dd") {
@@ -136,7 +154,7 @@ TEST_CASE_METHOD(CPUTest, "0x08:(LD (u16), SP) store SP into memory in u16 addre
     REQUIRE(cpu.PC == 0xC103);
 }
 
-TEST_CASE_METHOD(CPUTest, "0x09:(ADD HL, BC), check half carry (@bit 11)") {
+TEST_CASE_METHOD(CPUTest, "0x*9:(ADD HL, dd), check half carry (@bit 11)") {
     cpu.AF = nFlag | cFlag; // Setting negative and carry flag
     cpu.HL = 0x8A23;
     cpu.BC = 0x0605;
@@ -155,7 +173,7 @@ TEST_CASE_METHOD(CPUTest, "0x09:(ADD HL, BC), check half carry (@bit 11)") {
     REQUIRE(cpu.PC == 0x0003);
 }
 
-TEST_CASE_METHOD(CPUTest, "0x09:(ADD HL, HL), check full carry") {
+TEST_CASE_METHOD(CPUTest, "0x29:(ADD HL, HL), check full carry") {
     cpu.AF = nFlag; // Setting negative flag
     cpu.HL = 0x8A23;
     cpu.executeOpcode(0x0029);
@@ -164,7 +182,7 @@ TEST_CASE_METHOD(CPUTest, "0x09:(ADD HL, HL), check full carry") {
     REQUIRE(cpu.PC == 0x0001);
 }
 
-TEST_CASE_METHOD(CPUTest, "0x0A:(LD A, (BC)) loading memory[BC] into A") {
+TEST_CASE_METHOD(CPUTest, "0x*A:(LD A, (dd)) loading memory[dd] into A") {
     cpu.BC = 0x0011;
     cpu.memory[cpu.BC] = 0x5C;
     cpu.executeOpcode(0x000A);
@@ -172,7 +190,7 @@ TEST_CASE_METHOD(CPUTest, "0x0A:(LD A, (BC)) loading memory[BC] into A") {
     REQUIRE(cpu.PC == 1);
 } 
 
-TEST_CASE_METHOD(CPUTest, "0x0B:(DEC BC) decrement pair BC") {
+TEST_CASE_METHOD(CPUTest, "0x*B:(DEC dd) decrement pair dd") {
     cpu.BC = 0x235F;
     cpu.DE = 0x1234;
     cpu.HL = 0x4312;

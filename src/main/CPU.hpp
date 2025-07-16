@@ -44,8 +44,8 @@ public:
 	inline unsigned char C() const { return ( BC & 0x00FF);}
 	inline unsigned char D() const { return ( (DE & 0xFF00) >> 8);}
 	inline unsigned char E() const { return ( DE & 0x00FF);}
-	inline unsigned char H() const { return ( (HL & 0xFF00) >> 8);}
-	inline unsigned char L() const { return ( HL & 0x00FF);}
+	inline unsigned char H() const { return ( (HL & 0xFF00) >> 8);} // Higher register of HL (HL+)
+	inline unsigned char L() const { return ( HL & 0x00FF);} // Lower register of HL (HL-)
 
 	// Memory
 	unsigned char memory[465535]; // 16 bit address bus
@@ -93,7 +93,14 @@ void CPU::executeOpcode(short input){
 				switch(opcode & 0x000F){
 					case 0x00: PC++; break;
 					case 0x01: loadReg(memory[PC+2], memory[PC+1], *ddReg); PC+= 3; break;
-					case 0x02: storeReg(A(), BC); PC++; break;
+					case 0x02: 
+						switch (opcode){
+							case 0x22: storeReg(A(), HL); incReg(1, HL, PAIR); break;
+							case 0x32: storeReg(A(), HL); incReg(-1, HL, PAIR); break;
+							default: storeReg(A(), *ddReg); break;
+						}
+						PC++;
+						break;
 					case 0x03: incReg(1, *ddReg, PAIR); PC++; break;
 					case 0x04: incReg(1, BC, HIGH); PC++; break;
 					case 0x05: incReg(-1, BC, HIGH); PC++; break;
