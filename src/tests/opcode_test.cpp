@@ -187,6 +187,20 @@ TEST_CASE_METHOD(CPUTest, "0x07:(RLCA) rotating register A left") {
     REQUIRE(cpu.PC == 1);
 }
 
+TEST_CASE_METHOD(CPUTest, "0x17:(RLA) rotating register A left") {
+    cpu.AF = 0x1500 | zFlag | nFlag | hFlag | cFlag; // SetA at 0x85 (0b10000101), all flags set
+    cpu.executeOpcode(0x0017);
+    REQUIRE(cpu.AF == 0x2B00); // Register A = 0x0B (0b00001011) | all flags unset
+    REQUIRE(cpu.PC == 1);
+}
+
+TEST_CASE_METHOD(CPUTest, "0x37:Set carry flag") {
+    cpu.AF = zFlag | nFlag | hFlag; // Set zero, negative and HC flags, unset carry flag
+    cpu.executeOpcode(0x0037);
+    REQUIRE(cpu.AF == (zFlag | cFlag)); // flags: zero unchanged | unset negative/HC | set carry
+    REQUIRE(cpu.PC == 1);
+}
+
 TEST_CASE_METHOD(CPUTest, "0x08:(LD (u16), SP) store SP into memory in u16 address") {
     cpu.SP = 0xFFF8;
     cpu.PC = 0xC100; // starting program counter from C100
