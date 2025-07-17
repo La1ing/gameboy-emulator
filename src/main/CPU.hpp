@@ -128,7 +128,14 @@ void CPU::executeOpcode(short input){
 						}						
 						PC+=2; 
 						break;
-					case 0x07: rotate(AF, true, LEFT, HIGH); PC++; break;
+					case 0x07: 
+						switch (p){
+							case 0b00: rotate(AF, false, LEFT, HIGH); PC++; break;
+							case 0b01: rotate(AF, true, LEFT, HIGH); PC++; break;
+							case 0b10: PC++; break; // DO WHEN FINISHED IMPLEMENTING ADD/SUB LOGIC
+							case 0b11: AF |= cFlag; AF &= ~(nFlag | hFlag); PC++; break; // Set carry flag | unset negative & HC flags
+						}
+						break;
 					case 0x08: {
 						unsigned short nn = (memory[PC + 1] << 8)| memory[PC];
 						storeReg((SP & 0x00FF), PC);
@@ -242,15 +249,14 @@ void CPU::rotate(unsigned short &regPair, bool useCarry, DIRECTION d, MODE mode)
 		int shift = (mode == HIGH)? 8:0; // Shift of 8 if on the higher bit; 0 otherwise
 		unsigned char reg = (regPair >> shift) & 0x00FF; // Shifting register pair then masking the lower register to get the register
 		unsigned char newReg;
-		if(d == LEFT){ // LEFT rotation
+		if (d == LEFT){ // LEFT rotation
 			newReg = reg << 1;
-			newReg = (newReg & 0b11111110) | (reg & 0b10000000) >> 7; // first bit is set to last of original
+			newReg = (newReg & 0b11111110) | ((useCarry)? (AF & cFlag) >> 4:(reg & 0b10000000) >> 7); // first bit is set to last of original
 			if ((reg & 0b10000000) >> 7){
 				AF |= cFlag;
 			} else {
 				AF &= ~cFlag;
 			}
-
 		} else { // RIGHT rotation
 			newReg = reg >> 1;
 			newReg = (reg & 0x01) << 7 | (newReg & 0b01111111);
