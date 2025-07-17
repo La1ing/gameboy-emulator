@@ -94,13 +94,29 @@ TEST_CASE_METHOD(CPUTest, "0x03:(INC BC) increment B w/ overflow") {
     REQUIRE(cpu.PC == 0x0001);
 }
 
-TEST_CASE_METHOD(CPUTest, "0x04:(INC B) increment B NO overflow") {
+TEST_CASE_METHOD(CPUTest, "0x*4:(INC r) increment r") {
     cpu.AF = nFlag; // Setting AF as negative flag
     cpu.BC = 0x2000; // Setting B register as 0x20
     cpu.executeOpcode(0x0004);
     REQUIRE(cpu.BC == 0x2100);
     REQUIRE(cpu.AF == 0b00000000); // Negative flag is unset
     REQUIRE(cpu.PC == 0x0001);
+    cpu.DE = 0x0000;
+    cpu.executeOpcode(0x14);
+    REQUIRE(cpu.DE == 0x0100);
+    REQUIRE(cpu.AF == 0x0000);
+    cpu.HL = 0xA600;
+    cpu.executeOpcode(0x24);
+    REQUIRE(cpu.HL == 0xA700);
+    REQUIRE(cpu.AF == 0x0000); 
+    cpu.memory[0xA700] = 0xFF;
+    cpu.executeOpcode(0x34);
+    REQUIRE(cpu.memory[0xA700] == 0x00);
+    REQUIRE(cpu.AF == (zFlag | hFlag));
+    cpu.executeOpcode(0x34);
+    REQUIRE(cpu.memory[0xA700] == 0x01);
+    REQUIRE(cpu.AF == 0x0000);
+    REQUIRE(cpu.PC == 0x0005);
 }
 
 TEST_CASE_METHOD(CPUTest, "0x04:(INC B) increment B w/ overflow") {
@@ -112,13 +128,28 @@ TEST_CASE_METHOD(CPUTest, "0x04:(INC B) increment B w/ overflow") {
     REQUIRE(cpu.PC == 0x0001);
 }
 
-TEST_CASE_METHOD(CPUTest, "0x05:(DEC B) decrement B NO overflow (zero flag)") {
+TEST_CASE_METHOD(CPUTest, "0x*5:(DEC r) decrement r") {
     cpu.AF = hFlag; // Setting AF as half carry flag
     cpu.BC = 0x0100; // Setting B register as 0x01
     cpu.executeOpcode(0x0005);
     REQUIRE(cpu.BC == 0x0000);
     REQUIRE(cpu.AF == 0b0000000011000000); // Flags: SET zero, negative | UNSET HC
     REQUIRE(cpu.PC == 0x0001);
+    cpu.DE = 0x2200;
+    cpu.executeOpcode(0x0015);
+    REQUIRE(cpu.DE == 0x2100);
+    REQUIRE(cpu.AF == nFlag);
+    cpu.HL = 0x7600;
+    cpu.executeOpcode(0x0025);
+    REQUIRE(cpu.HL == 0x7500);  
+    cpu.memory[0x7500] = 0x01;
+    cpu.executeOpcode(0x0035);
+    REQUIRE(cpu.memory[0x7500] == 0x00);
+    REQUIRE(cpu.AF == (zFlag | nFlag));
+    cpu.executeOpcode(0x0035);
+    REQUIRE(cpu.memory[0x7500] == 0xFF);
+    REQUIRE(cpu.AF == (nFlag | hFlag));
+    REQUIRE(cpu.PC == 0x0005);
 }
 
 TEST_CASE_METHOD(CPUTest, "0x05:(DEC B) decrement B w/ overflow") {
@@ -130,12 +161,23 @@ TEST_CASE_METHOD(CPUTest, "0x05:(DEC B) decrement B w/ overflow") {
     REQUIRE(cpu.PC == 0x0001);
 }
 
-TEST_CASE_METHOD(CPUTest, "0x06:(LD B, u8) Bloading 8-bit immediate data into B") {
+TEST_CASE_METHOD(CPUTest, "0x*6:(LD r, u8) Bloading 8-bit immediate data into r") {
     cpu.PC = 0x00; // Start PC at 0
     cpu.memory[0x01] = 0x24;
     cpu.executeOpcode(0x0006);
     REQUIRE(cpu.BC == 0x2400);
     REQUIRE(cpu.PC == 0x0002);
+    cpu.memory[0x03] = 0x25;
+    cpu.executeOpcode(0x0016);
+    REQUIRE(cpu.BC == 0x2500);
+    cpu.memory[0x05] = 0x26;
+    cpu.executeOpcode(0x0026);
+    REQUIRE(cpu.BC == 0x2600);
+    cpu.memory[0x07] = 0x28;
+    cpu.HL = 0x0020;
+    cpu.executeOpcode(0x0036);
+    REQUIRE(cpu.memory[0x020] == 0x28);
+    REQUIRE(cpu.PC == 0x0008);
 }
 
 TEST_CASE_METHOD(CPUTest, "0x07:(RLCA) rotating register A left") {

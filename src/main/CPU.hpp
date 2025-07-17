@@ -58,6 +58,7 @@ public:
 	void loadReg(unsigned char high, unsigned char low, unsigned short &reg);
 	void storeReg(unsigned char reg, unsigned short loc);
 	void incReg(int amount, unsigned short &reg, MODE mode);
+	void incMem(int amount, unsigned short loc);
 	void rotate(unsigned short &regPair, bool carry, DIRECTION d, MODE mode);
 	void addPairs(unsigned short &storeReg, unsigned short &reg);
 };
@@ -102,9 +103,31 @@ void CPU::executeOpcode(short input){
 						PC++;
 						break;
 					case 0x03: incReg(1, *ddReg, PAIR); PC++; break;
-					case 0x04: incReg(1, BC, HIGH); PC++; break;
-					case 0x05: incReg(-1, BC, HIGH); PC++; break;
-					case 0x06: loadReg(memory[PC+1], C(), BC);PC+=2; break;
+					case 0x04: 
+						if (opcode == 0x34){
+							incMem(1, HL);
+						} else {
+							incReg(1, *ddReg, HIGH); 
+						}
+						PC++; 
+						break;
+					case 0x05: 
+						if (opcode == 0x35) { 
+							incMem(-1, HL);
+						} else {
+							incReg(-1, *ddReg, HIGH); 
+						}
+						PC++; 
+						break;
+					case 0x06: 
+						loadReg(memory[PC+1], C(), BC); 
+						if (opcode == 0x36) { 
+							storeReg(memory[PC+1], HL);
+						} else {
+							loadReg(memory[PC+1], (*ddReg & 0x00FF), *ddReg); 
+						}						
+						PC+=2; 
+						break;
 					case 0x07: rotate(AF, true, LEFT, HIGH); PC++; break;
 					case 0x08: {
 						unsigned short nn = (memory[PC + 1] << 8)| memory[PC];
@@ -177,6 +200,31 @@ void CPU::incReg(int amount, unsigned short &reg, MODE mode){
 		unsigned short mask = (mode == HIGH)? 0x00FF:0xFF00; // Mask for other register
 		reg = (halfReg << shift) | (reg & mask);
 	}
+}
+
+
+/**
+ * Increments memory at location of register `loc`.
+ */
+void CPU::incMem(int amount, unsigned short loc){
+	unsigned char &targetMem = memory[loc];
+	if (amount > 0){
+		if (targetMem == 0xFF) {
+			AF |= (zFlag | hFlag); // set zero / half carry
+		} else {
+			AF &= ~(zFlag | hFlag); // unset otherwise
+		}
+		AF &= ~nFlag; // Unset nFlag
+	} else {
+		AF &= ~ (zFlag | hFlag); // unset both flags temporarily
+		if (targetMem == 1){
+			AF |= zFlag;
+		} else  if (targetMem == 0){
+			AF |= hFlag;
+		}
+		AF |= nFlag; // set nFlag
+	}
+	targetMem += amount;
 }
 
 /**
