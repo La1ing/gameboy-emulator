@@ -210,6 +210,38 @@ TEST_CASE_METHOD(CPUTest, "0x08:(LD (u16), SP) store SP into memory in u16 addre
     REQUIRE(cpu.PC == 0xC103);
 }
 
+TEST_CASE_METHOD(CPUTest, "0x18:(JR e) jump e steps") {
+    cpu.PC = 0x0000;
+    cpu.memory[cpu.PC + 1] = 0b01111111; // 127
+    cpu.executeOpcode(0x18);
+    REQUIRE(cpu.PC == 129); // Added by 129 (127 + 2)
+    cpu.memory[130] = 0b10000000; // -128
+    cpu.executeOpcode(0x18);
+    REQUIRE(cpu.PC == 3); // Subtracted by 126 (-128 + 2)
+}
+
+TEST_CASE_METHOD(CPUTest, "0x28/38:(JR cc, e) jump e steps after condition cc") {
+    cpu.PC = 0x0000;
+    cpu.memory[cpu.PC + 1] = 0x01; // 1
+    cpu.AF = 0x0000; // All flags unset
+    cpu.executeOpcode(0x28);
+    REQUIRE(cpu.PC == 2); // Jumps by 2 instead of 3 as z flag not set
+    cpu.AF = zFlag;
+    cpu.memory[2 + 1] = 0x01;
+    cpu.executeOpcode(0x28);
+    REQUIRE(cpu.PC == 5);
+
+    cpu.PC = 0x0000; // reset PC
+    cpu.memory[cpu.PC + 1] = 0x02; // 1
+    cpu.AF = 0x0000; // All flags unset
+    cpu.executeOpcode(0x38);
+    REQUIRE(cpu.PC == 2); // Jumps by 2 instead of 3 as z flag not set
+    cpu.AF = cFlag;
+    cpu.memory[2 + 1] = 0x02;
+    cpu.executeOpcode(0x38);
+    REQUIRE(cpu.PC == 6);
+}
+
 TEST_CASE_METHOD(CPUTest, "0x*9:(ADD HL, dd), check half carry (@bit 11)") {
     cpu.AF = nFlag | cFlag; // Setting negative and carry flag
     cpu.HL = 0x8A23;

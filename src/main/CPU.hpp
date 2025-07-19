@@ -137,10 +137,13 @@ void CPU::executeOpcode(short input){
 						}
 						break;
 					case 0x08: {
-						unsigned short nn = (memory[PC + 1] << 8)| memory[PC];
-						storeReg((SP & 0x00FF), PC);
-						storeReg(((SP & 0xFF00) >> 8), PC + 1);
-						PC += 3; 
+						signed char e = memory[PC + 1];
+						switch (p) {
+							case 0b00: {storeReg((SP & 0x00FF), PC); storeReg(((SP & 0xFF00) >> 8), PC + 1); PC += 3; break;}
+							case 0b01: PC += e + 2; break;
+							case 0b10: PC += (((AF & zFlag) >> 7)? e: 0) + 2; break;
+							case 0b11: PC += (((AF & cFlag) >> 4)? e: 0) + 2; break;
+						}
 						break;
 					}
 					case 0x09: addPairs(HL, *ddReg); PC++; break;
