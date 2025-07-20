@@ -67,7 +67,7 @@ TEST_CASE_METHOD(CPUTest, "0x*2:(LD (dd), A) register stored in correct location
     REQUIRE(cpu.PC == 0x0003);
 }
 
-TEST_CASE_METHOD(CPUTest, "0x03:(LB (dd), A) increment dd") {
+TEST_CASE_METHOD(CPUTest, "0x*3:(LB (dd), A) increment dd") {
     cpu.AF = 0x0000;
     cpu.BC = 0x000F;
     cpu.DE = 0xFFFF;
@@ -270,13 +270,31 @@ TEST_CASE_METHOD(CPUTest, "0x29:(ADD HL, HL), check full carry") {
     REQUIRE(cpu.PC == 0x0001);
 }
 
-TEST_CASE_METHOD(CPUTest, "0x*A:(LD A, (dd)) loading memory[dd] into A") {
+TEST_CASE_METHOD(CPUTest, "0x0A:(LD A, (BC)) loading memory[BC] into A") {
     cpu.BC = 0x0011;
     cpu.memory[cpu.BC] = 0x5C;
     cpu.executeOpcode(0x000A);
     REQUIRE(cpu.AF == 0x5C00); // Register A = 0x2B (0b00101011) | carry flag set w/ rest unset
     REQUIRE(cpu.PC == 1);
-} 
+}
+
+TEST_CASE_METHOD(CPUTest, "0x*A:(LD A, (dd)) loading memory[dd] into A") {
+    cpu.DE = 0x0011;
+    cpu.memory[cpu.DE] = 0x5C;
+    cpu.executeOpcode(0x001A);
+    REQUIRE(cpu.AF == 0x5C00); // Register A = 0x2B (0b00101011) | carry flag set w/ rest unset
+    REQUIRE(cpu.PC == 1);
+    cpu.HL = 0x0003;
+    cpu.memory[0x0003] = 0x0A;
+    cpu.memory[0x0004] = 0x08;
+    cpu.executeOpcode(0x002A);
+    REQUIRE(cpu.AF == 0x0A00);
+    REQUIRE(cpu.HL == 0x0004);
+    cpu.executeOpcode(0x003A);
+    REQUIRE(cpu.AF == 0x0800);
+    REQUIRE(cpu.HL == 0x0003);
+    REQUIRE(cpu.PC == 0x0003);
+}
 
 TEST_CASE_METHOD(CPUTest, "0x*B:(DEC dd) decrement pair dd") {
     cpu.BC = 0x235F;

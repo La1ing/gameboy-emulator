@@ -147,7 +147,14 @@ void CPU::executeOpcode(short input){
 						break;
 					}
 					case 0x09: addPairs(HL, *ddReg); PC++; break;
-					case 0x0A: loadReg(memory[BC], (AF & 0xFF), AF); PC++; break;
+					case 0x0A: 
+						switch (opcode){
+							case 0x2A: loadReg(memory[HL], (AF & 0xFF), AF); incReg(1, HL, PAIR); break;
+							case 0x3A: loadReg(memory[HL], (AF & 0xFF), AF); incReg(-1, HL, PAIR); break;
+							default: loadReg(memory[*ddReg], (AF & 0xFF), AF); break;
+						}
+						PC++;
+						break;
 					case 0x0B: incReg(-1, *ddReg, PAIR); PC++; break;
 					case 0x0C: incReg(1, BC, LOW); PC++; break;
 					case 0x0D: incReg(-1, BC, LOW); PC++; break;
