@@ -94,7 +94,7 @@ TEST_CASE_METHOD(CPUTest, "0x03:(INC BC) increment B w/ overflow") {
     REQUIRE(cpu.PC == 0x0001);
 }
 
-TEST_CASE_METHOD(CPUTest, "0x*4:(INC r) increment r") {
+TEST_CASE_METHOD(CPUTest, "0x*4:(INC r) increment r (higher pair)") {
     cpu.AF = nFlag; // Setting AF as negative flag
     cpu.BC = 0x2000; // Setting B register as 0x20
     cpu.executeOpcode(0x0004);
@@ -128,7 +128,7 @@ TEST_CASE_METHOD(CPUTest, "0x04:(INC B) increment B w/ overflow") {
     REQUIRE(cpu.PC == 0x0001);
 }
 
-TEST_CASE_METHOD(CPUTest, "0x*5:(DEC r) decrement r") {
+TEST_CASE_METHOD(CPUTest, "0x*5:(DEC r) decrement r (higher pair)") {
     cpu.AF = hFlag; // Setting AF as half carry flag
     cpu.BC = 0x0100; // Setting B register as 0x01
     cpu.executeOpcode(0x0005);
@@ -161,7 +161,7 @@ TEST_CASE_METHOD(CPUTest, "0x05:(DEC B) decrement B w/ overflow") {
     REQUIRE(cpu.PC == 0x0001);
 }
 
-TEST_CASE_METHOD(CPUTest, "0x*6:(LD r, u8) Bloading 8-bit immediate data into r") {
+TEST_CASE_METHOD(CPUTest, "0x*6:(LD r, u8) loading 8-bit immediate data into r (higher pair)") {
     cpu.PC = 0x00; // Start PC at 0
     cpu.memory[0x01] = 0x24;
     cpu.executeOpcode(0x0006);
@@ -169,10 +169,11 @@ TEST_CASE_METHOD(CPUTest, "0x*6:(LD r, u8) Bloading 8-bit immediate data into r"
     REQUIRE(cpu.PC == 0x0002);
     cpu.memory[0x03] = 0x25;
     cpu.executeOpcode(0x0016);
-    REQUIRE(cpu.BC == 0x2500);
+    REQUIRE(cpu.DE == 0x2500);
+    REQUIRE(cpu.BC != 0x2500);
     cpu.memory[0x05] = 0x26;
     cpu.executeOpcode(0x0026);
-    REQUIRE(cpu.BC == 0x2600);
+    REQUIRE(cpu.HL == 0x2600);
     cpu.memory[0x07] = 0x28;
     cpu.HL = 0x0020;
     cpu.executeOpcode(0x0036);
@@ -313,34 +314,93 @@ TEST_CASE_METHOD(CPUTest, "0x*B:(DEC dd) decrement pair dd") {
     REQUIRE(cpu.PC == 4);
 } 
 
-TEST_CASE_METHOD(CPUTest, "0x0C:(INC C) increment register C") {
+TEST_CASE_METHOD(CPUTest, "0x*C:(INC r) increment register r (lower pair)") {
     cpu.BC = 0x23FF;
     cpu.executeOpcode(0x000C);
     REQUIRE(cpu.BC == 0x2300);
     REQUIRE(cpu.AF == (zFlag | hFlag)); // set: zero and half-carry flag
     REQUIRE(cpu.PC == 1);
+    cpu.AF = nFlag; // Setting AF as negative flag
+    cpu.BC = 0x0020; // Setting C register as 0x20
+    cpu.executeOpcode(0x000C);
+    REQUIRE(cpu.BC == 0x0021);
+    REQUIRE(cpu.AF == 0b00000000); // Negative flag is unset
+    cpu.DE = 0x0000;
+    cpu.executeOpcode(0x1C);
+    REQUIRE(cpu.DE == 0x0001);
+    REQUIRE(cpu.AF == 0x0000);
+    cpu.HL = 0x00A6;
+    cpu.executeOpcode(0x2C);
+    REQUIRE(cpu.HL == 0x00A7);
+    REQUIRE(cpu.AF == 0x0000); 
+    cpu.AF = 0xFF00;
+    cpu.executeOpcode(0x3C);
+    REQUIRE(cpu.AF == (0x0000 | zFlag | hFlag));
+    cpu.executeOpcode(0x3C);
+    REQUIRE(cpu.AF == 0x0100);
+    REQUIRE(cpu.PC == 0x0006);
 } 
 
-TEST_CASE_METHOD(CPUTest, "0x0D:(DEC C) decrement register C") {
+TEST_CASE_METHOD(CPUTest, "0x*D:(DEC r) decrement register r (lower pair)") {
     cpu.BC = 0x4201;
     cpu.executeOpcode(0x000D);
     REQUIRE(cpu.BC == 0x4200);
     REQUIRE(cpu.AF == (zFlag | nFlag)); // set: zero and negative flag
     REQUIRE(cpu.PC == 1);
+    cpu.AF = hFlag; // Setting AF as half carry flag
+    cpu.BC = 0x0001; // Setting B register as 0x01
+    cpu.executeOpcode(0x000D);
+    REQUIRE(cpu.BC == 0x0000);
+    REQUIRE(cpu.AF == 0b0000000011000000); // Flags: SET zero, negative | UNSET HC
+    cpu.DE = 0x0022;
+    cpu.executeOpcode(0x001D);
+    REQUIRE(cpu.DE == 0x0021);
+    REQUIRE(cpu.AF == nFlag);
+    cpu.HL = 0x0076;
+    cpu.executeOpcode(0x002D);
+    REQUIRE(cpu.HL == 0x0075);  
+    cpu.AF = 0x0100;
+    cpu.executeOpcode(0x003D);
+    REQUIRE(cpu.AF == (0x0000 | zFlag | nFlag));
+    cpu.executeOpcode(0x003D);
+    REQUIRE(cpu.AF == (0xFF00 | nFlag | hFlag));
+    REQUIRE(cpu.PC == 0x0006);
 } 
 
-TEST_CASE_METHOD(CPUTest, "0x0E:(LD C, d8) load immediate data into reg C") {
+TEST_CASE_METHOD(CPUTest, "0x0E:(LD r, d8) load immediate data into reg r (lower pair)") {
     cpu.PC = 0x05;
     cpu.BC = 0x0000;
     cpu.memory[cpu.PC + 1] = 0x24;
     cpu.executeOpcode(0x000E);
     REQUIRE(cpu.BC == 0x0024);
     REQUIRE(cpu.PC == 7);
+    cpu.PC = 0x00; // Restart PC at 0
+    cpu.memory[0x01] = 0x24;
+    cpu.executeOpcode(0x000E);
+    REQUIRE(cpu.BC == 0x0024);
+    REQUIRE(cpu.PC == 0x0002);
+    cpu.memory[0x03] = 0x25;
+    cpu.executeOpcode(0x001E);
+    REQUIRE(cpu.DE == 0x0025);
+    cpu.memory[0x05] = 0x26;
+    cpu.executeOpcode(0x002E);
+    REQUIRE(cpu.HL == 0x0026);
+    cpu.memory[0x07] = 0x28;
+    cpu.executeOpcode(0x003E);
+    REQUIRE(cpu.AF == 0x2800);
+    REQUIRE(cpu.PC == 0x0008);
 } 
 
 TEST_CASE_METHOD(CPUTest, "0x0F:(RRCA) rotating register A right") {
     cpu.AF = 0x3B00 | zFlag | nFlag | hFlag | cFlag; // SetA at 0x95 (0b10010101), all flags set
     cpu.executeOpcode(0x000F);
     REQUIRE(cpu.AF == (0x9D00 | cFlag)); // Register A = 0x2B (0b00101011) | carry flag set w/ rest unset
+    REQUIRE(cpu.PC == 1);
+}
+
+TEST_CASE_METHOD(CPUTest, "0x1F:(RRCA) rotating register A right") {
+    cpu.AF = 0x8100 | zFlag | nFlag | hFlag; // SetA at 0x81 (0b10000001), all flags set
+    cpu.executeOpcode(0x001F);
+    REQUIRE(cpu.AF == (0x4000 | cFlag)); // Register A = 0x40 (0b01000000) | carry flag set w/ rest unset
     REQUIRE(cpu.PC == 1);
 }

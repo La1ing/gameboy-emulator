@@ -12,10 +12,10 @@ FLAGS REGISTER FOR LOWER 8 BITS OF AF.
 \param 5:hFlag 	half carry flag (BCD)
 \param 4:cFlag 	carry flag
 */
-#define zFlag	0b0000000010000000
-#define nFlag	0b0000000001000000
-#define hFlag	0b0000000000100000
-#define cFlag	0b0000000000010000
+#define zFlag	(1 << 7)
+#define nFlag	(1 << 6)
+#define hFlag	(1 << 5)
+#define cFlag	(1 << 4)
 
 /**
  * MODE determines which register is chosen.
@@ -120,7 +120,6 @@ void CPU::executeOpcode(short input){
 						PC++; 
 						break;
 					case 0x06: 
-						loadReg(memory[PC+1], C(), BC); 
 						if (opcode == 0x36) { 
 							storeReg(memory[PC+1], HL);
 						} else {
@@ -156,10 +155,39 @@ void CPU::executeOpcode(short input){
 						PC++;
 						break;
 					case 0x0B: incReg(-1, *ddReg, PAIR); PC++; break;
-					case 0x0C: incReg(1, BC, LOW); PC++; break;
-					case 0x0D: incReg(-1, BC, LOW); PC++; break;
-					case 0x0E: loadReg(B(), memory[PC+1], BC); PC+=2; break;
-					case 0x0F: rotate(AF, true, RIGHT, HIGH); PC++; break;
+					case 0x0C: 
+						if (p == 0b11){
+							incReg(1, AF, HIGH);
+						} else {
+							incReg(1, *ddReg, LOW); 
+						}
+						PC++; 
+						break;
+					case 0x0D: 
+						if (p == 0b11){
+							incReg(-1, AF, HIGH);
+						} else {
+							incReg(-1, *ddReg, LOW); 
+						}
+						PC++; 
+						break;					
+					case 0x0E: 
+						if (p == 0b11){
+							loadReg(memory[PC+1], F(), AF);
+						} else {
+							loadReg((*ddReg & 0xFF00 << 8), memory[PC+1], *ddReg); 
+						}
+						PC+=2; 
+						break;
+					case 0x0F: 
+						switch (p){
+							case 0b00: rotate(AF, false, RIGHT, HIGH); break;
+							case 0b01: rotate(AF, true, RIGHT, HIGH); break;
+							case 0b10: AF = ((!A()) << 8) | F(); break;
+							case 0b11: AF ^= cFlag; break;
+						}
+						PC++;
+						break;
 					default: printf("Unknown opcode: 0x%X\n", opcode); break;
 				}
 			}
@@ -269,7 +297,7 @@ void CPU::rotate(unsigned short &regPair, bool useCarry, DIRECTION d, MODE mode)
 			}
 		} else { // RIGHT rotation
 			newReg = reg >> 1;
-			newReg = (reg & 0x01) << 7 | (newReg & 0b01111111);
+			newReg = (((useCarry)? (AF & cFlag) >> 4:reg & 0x01) << 7) | (newReg & 0b01111111);
 			if (reg & 0x01){
 				AF |= cFlag;
 			} else {
