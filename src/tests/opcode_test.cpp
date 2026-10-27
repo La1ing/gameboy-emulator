@@ -205,9 +205,11 @@ TEST_CASE_METHOD(CPUTest, "0x37:Set carry flag") {
 TEST_CASE_METHOD(CPUTest, "0x08:(LD (u16), SP) store SP into memory in u16 address") {
     cpu.SP = 0xFFF8;
     cpu.PC = 0xC100; // starting program counter from C100
+    cpu.memory[0xC101] = 0x00; // u16 address = 0xD000 (little endian)
+    cpu.memory[0xC102] = 0xD0;
     cpu.executeOpcode(0x0008);
-    REQUIRE(cpu.memory[0xC100] == 0xF8);
-    REQUIRE(cpu.memory[0xC101] == 0xFF);
+    REQUIRE(cpu.memory[0xD000] == 0xF8);
+    REQUIRE(cpu.memory[0xD001] == 0xFF);
     REQUIRE(cpu.PC == 0xC103);
 }
 
@@ -369,22 +371,24 @@ TEST_CASE_METHOD(CPUTest, "0x*D:(DEC r) decrement register r (lower pair)") {
 
 TEST_CASE_METHOD(CPUTest, "0x0E:(LD r, d8) load immediate data into reg r (lower pair)") {
     cpu.PC = 0x05;
-    cpu.BC = 0x0000;
+    cpu.BC = 0x4200; // Higher register must be left unchanged
     cpu.memory[cpu.PC + 1] = 0x24;
     cpu.executeOpcode(0x000E);
-    REQUIRE(cpu.BC == 0x0024);
+    REQUIRE(cpu.BC == 0x4224);
     REQUIRE(cpu.PC == 7);
     cpu.PC = 0x00; // Restart PC at 0
     cpu.memory[0x01] = 0x24;
     cpu.executeOpcode(0x000E);
-    REQUIRE(cpu.BC == 0x0024);
+    REQUIRE(cpu.BC == 0x4224);
     REQUIRE(cpu.PC == 0x0002);
+    cpu.DE = 0x1100;
     cpu.memory[0x03] = 0x25;
     cpu.executeOpcode(0x001E);
-    REQUIRE(cpu.DE == 0x0025);
+    REQUIRE(cpu.DE == 0x1125);
+    cpu.HL = 0x3300;
     cpu.memory[0x05] = 0x26;
     cpu.executeOpcode(0x002E);
-    REQUIRE(cpu.HL == 0x0026);
+    REQUIRE(cpu.HL == 0x3326);
     cpu.memory[0x07] = 0x28;
     cpu.executeOpcode(0x003E);
     REQUIRE(cpu.AF == 0x2800);
@@ -403,4 +407,65 @@ TEST_CASE_METHOD(CPUTest, "0x1F:(RRCA) rotating register A right") {
     cpu.executeOpcode(0x001F);
     REQUIRE(cpu.AF == (0x4000 | cFlag)); // Register A = 0x40 (0b01000000) | carry flag set w/ rest unset
     REQUIRE(cpu.PC == 1);
+}
+
+TEST_CASE_METHOD(CPUTest, "0x10:(STOP) skips 2 bytes") {
+    cpu.executeOpcode(0x0010);
+    REQUIRE(cpu.PC == 2);
+}
+
+TEST_CASE_METHOD(CPUTest, "0x20/30:(JR ncc, e) jump e steps if condition flag unset") {
+    cpu.PC = 0x0000;
+    cpu.memory[cpu.PC + 1] = 0x05;
+    cpu.AF = zFlag; // Zero flag set, so no jump
+    cpu.executeOpcode(0x20);
+    REQUIRE(cpu.PC == 2);
+    cpu.AF = 0x0000;
+    cpu.memory[2 + 1] = 0x05;
+    cpu.executeOpcode(0x20);
+    REQUIRE(cpu.PC == 9); // 2 + 5 + 2
+
+    cpu.PC = 0x0010;
+    cpu.memory[0x11] = 0xFE; // -2
+    cpu.AF = 0x0000; // Carry flag unset, so jump
+    cpu.executeOpcode(0x30);
+    REQUIRE(cpu.PC == 0x0010); // 0x10 - 2 + 2
+    cpu.AF = cFlag;
+    cpu.executeOpcode(0x30);
+    REQUIRE(cpu.PC == 0x0012);
+}
+
+TEST_CASE_METHOD(CPUTest, "0x2F:(CPL) complement register A") {
+    cpu.AF = 0x3500 | zFlag | cFlag;
+    cpu.executeOpcode(0x002F);
+    REQUIRE(cpu.AF == (0xCA00 | zFlag | nFlag | hFlag | cFlag)); // zero, carry unchanged | set negative, HC
+    REQUIRE(cpu.PC == 1);
+}
+
+TEST_CASE_METHOD(CPUTest, "0x3F:(CCF) complement carry flag") {
+    cpu.AF = 0x1200 | zFlag | nFlag | hFlag | cFlag;
+    cpu.executeOpcode(0x003F);
+    REQUIRE(cpu.AF == (0x1200 | zFlag)); // carry flipped | unset negative, HC
+    cpu.executeOpcode(0x003F);
+    REQUIRE(cpu.AF == (0x1200 | zFlag | cFlag));
+    REQUIRE(cpu.PC == 2);
+}
+
+TEST_CASE_METHOD(CPUTest, "INC/DEC r & (HL) set half carry on bit 3/4 carry/borrow") {
+    cpu.AF = 0x0000;
+    cpu.BC = 0x0F00;
+    cpu.executeOpcode(0x0004); // INC B: 0x0F -> 0x10
+    REQUIRE(cpu.BC == 0x1000);
+    REQUIRE(cpu.AF == hFlag);
+    cpu.executeOpcode(0x0005); // DEC B: 0x10 -> 0x0F
+    REQUIRE(cpu.BC == 0x0F00);
+    REQUIRE(cpu.AF == (nFlag | hFlag));
+    cpu.HL = 0xC000;
+    cpu.memory[0xC000] = 0x2F;
+    cpu.executeOpcode(0x0034); // INC (HL): 0x2F -> 0x30
+    REQUIRE(cpu.memory[0xC000] == 0x30);
+    REQUIRE(cpu.AF == hFlag);
+    cpu.executeOpcode(0x0035); // DEC (HL): 0x30 -> 0x2F
+    REQUIRE(cpu.memory[0xC000] == 0x2F);
+    REQUIRE(cpu.AF == (nFlag | hFlag));
 }

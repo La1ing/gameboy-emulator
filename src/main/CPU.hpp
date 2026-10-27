@@ -48,7 +48,7 @@ public:
 	inline unsigned char L() const { return ( HL & 0x00FF);} // Lower register of HL (HL-)
 
 	// Memory
-	unsigned char memory[465535]; // 16 bit address bus
+	unsigned char memory[0x10000]; // 16 bit address bus
 
 	unsigned short opcode;
 
@@ -92,7 +92,16 @@ void CPU::executeOpcode(short input){
 					case 0b11: ddReg = &SP; break;
 				}
 				switch(opcode & 0x000F){
-					case 0x00: PC++; break;
+					case 0x00: {
+						signed char e = memory[PC + 1];
+						switch (p) {
+							case 0b00: PC++; break; // NOP
+							case 0b01: PC += 2; break; // STOP
+							case 0b10: PC += (((AF & zFlag) >> 7)? 0: e) + 2; break; // JR NZ, e
+							case 0b11: PC += (((AF & cFlag) >> 4)? 0: e) + 2; break; // JR NC, e
+						}
+						break;
+					}
 					case 0x01: loadReg(memory[PC+2], memory[PC+1], *ddReg); PC+= 3; break;
 					case 0x02: 
 						switch (opcode){
@@ -138,7 +147,13 @@ void CPU::executeOpcode(short input){
 					case 0x08: {
 						signed char e = memory[PC + 1];
 						switch (p) {
-							case 0b00: {storeReg((SP & 0x00FF), PC); storeReg(((SP & 0xFF00) >> 8), PC + 1); PC += 3; break;}
+							case 0b00: { // LD (u16), SP
+								unsigned short addr = (memory[PC + 2] << 8) | memory[PC + 1];
+								storeReg((SP & 0x00FF), addr);
+								storeReg(((SP & 0xFF00) >> 8), addr + 1);
+								PC += 3;
+								break;
+							}
 							case 0b01: PC += e + 2; break;
 							case 0b10: PC += (((AF & zFlag) >> 7)? e: 0) + 2; break;
 							case 0b11: PC += (((AF & cFlag) >> 4)? e: 0) + 2; break;
@@ -175,7 +190,7 @@ void CPU::executeOpcode(short input){
 						if (p == 0b11){
 							loadReg(memory[PC+1], F(), AF);
 						} else {
-							loadReg((*ddReg & 0xFF00 << 8), memory[PC+1], *ddReg); 
+							loadReg(((*ddReg & 0xFF00) >> 8), memory[PC+1], *ddReg);
 						}
 						PC+=2; 
 						break;
@@ -183,8 +198,8 @@ void CPU::executeOpcode(short input){
 						switch (p){
 							case 0b00: rotate(AF, false, RIGHT, HIGH); break;
 							case 0b01: rotate(AF, true, RIGHT, HIGH); break;
-							case 0b10: AF = ((!A()) << 8) | F(); break;
-							case 0b11: AF ^= cFlag; break;
+							case 0b10: AF = ((~A() & 0xFF) << 8) | F() | nFlag | hFlag; break; // CPL: set negative & HC flags
+							case 0b11: AF ^= cFlag; AF &= ~(nFlag | hFlag); break; // CCF: flip carry | unset negative & HC flags
 						}
 						PC++;
 						break;
@@ -225,20 +240,14 @@ void CPU::incReg(int amount, unsigned short &reg, MODE mode){
 	} else {
 		int shift = (mode == HIGH)? 8:0; // Shift of 8 if on the higher bit; 0 otherwise
 		unsigned char halfReg = (reg >> shift) & 0x00FF; // Shifting register pair then masking the lower register to get the register
+		AF &= ~ (zFlag | hFlag); // unset both flags temporarily
 		if (amount > 0){
-			if (halfReg == 0xFF) {
-				AF |= (zFlag | hFlag); // set zero / half carry
-			} else {
-				AF &= ~(zFlag | hFlag); // unset otherwise
-			}
+			if (halfReg == 0xFF) AF |= zFlag;
+			if ((halfReg & 0x0F) == 0x0F) AF |= hFlag; // carry from bit 3
 			AF &= ~nFlag; // Unset nFlag
 		} else {
-			AF &= ~ (zFlag | hFlag); // unset both flags temporarily
-			if (halfReg == 1){
-				AF |= zFlag;
-			} else  if (halfReg == 0){
-				AF |= hFlag;
-			}
+			if (halfReg == 1) AF |= zFlag;
+			if ((halfReg & 0x0F) == 0x00) AF |= hFlag; // borrow from bit 4
 			AF |= nFlag; // set nFlag
 		}
 		halfReg += amount;
@@ -253,20 +262,14 @@ void CPU::incReg(int amount, unsigned short &reg, MODE mode){
  */
 void CPU::incMem(int amount, unsigned short loc){
 	unsigned char &targetMem = memory[loc];
+	AF &= ~ (zFlag | hFlag); // unset both flags temporarily
 	if (amount > 0){
-		if (targetMem == 0xFF) {
-			AF |= (zFlag | hFlag); // set zero / half carry
-		} else {
-			AF &= ~(zFlag | hFlag); // unset otherwise
-		}
+		if (targetMem == 0xFF) AF |= zFlag;
+		if ((targetMem & 0x0F) == 0x0F) AF |= hFlag; // carry from bit 3
 		AF &= ~nFlag; // Unset nFlag
 	} else {
-		AF &= ~ (zFlag | hFlag); // unset both flags temporarily
-		if (targetMem == 1){
-			AF |= zFlag;
-		} else  if (targetMem == 0){
-			AF |= hFlag;
-		}
+		if (targetMem == 1) AF |= zFlag;
+		if ((targetMem & 0x0F) == 0x00) AF |= hFlag; // borrow from bit 4
 		AF |= nFlag; // set nFlag
 	}
 	targetMem += amount;
