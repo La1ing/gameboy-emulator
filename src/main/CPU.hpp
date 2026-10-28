@@ -1,9 +1,10 @@
 #ifndef CPU_HPP
 #define CPU_HPP
 
+#include <array>
+#include <cstdint>
+#include <format>
 #include <iostream>
-#include <fstream>
-#include <cstdlib>
 
 /*
 FLAGS REGISTER FOR LOWER 8 BITS OF AF.
@@ -12,58 +13,67 @@ FLAGS REGISTER FOR LOWER 8 BITS OF AF.
 \param 5:hFlag 	half carry flag (BCD)
 \param 4:cFlag 	carry flag
 */
-#define zFlag	(1 << 7)
-#define nFlag	(1 << 6)
-#define hFlag	(1 << 5)
-#define cFlag	(1 << 4)
+inline constexpr std::uint16_t zFlag = 1 << 7;
+inline constexpr std::uint16_t nFlag = 1 << 6;
+inline constexpr std::uint16_t hFlag = 1 << 5;
+inline constexpr std::uint16_t cFlag = 1 << 4;
 
 /**
- * MODE determines which register is chosen.
- * \param HIGH Higher register.
- * \param LOW lower register.
- * \param PAIR both registers.
+ * Mode determines which register is chosen.
+ * \param High Higher register.
+ * \param Low lower register.
+ * \param Pair both registers.
  */
-enum MODE {HIGH, LOW, PAIR};
+enum class Mode {High, Low, Pair};
 
-enum DIRECTION {LEFT, RIGHT};
+enum class Direction {Left, Right};
+
+// Higher / lower byte of a register pair
+[[nodiscard]] constexpr std::uint8_t highByte(std::uint16_t pair) noexcept { return static_cast<std::uint8_t>(pair >> 8); }
+[[nodiscard]] constexpr std::uint8_t lowByte(std::uint16_t pair) noexcept { return static_cast<std::uint8_t>(pair & 0x00FF); }
 
 class CPU {
 public:
 	// Registers
-	unsigned short AF; // Accumulator & flags
-	unsigned short BC; // BC
-	unsigned short DE; // DE
-	unsigned short HL; // HL
-	unsigned short SP; // Stack pointer
-	unsigned short PC; // Program counter
+	std::uint16_t AF{}; // Accumulator & flags
+	std::uint16_t BC{}; // BC
+	std::uint16_t DE{}; // DE
+	std::uint16_t HL{}; // HL
+	std::uint16_t SP{}; // Stack pointer
+	std::uint16_t PC{}; // Program counter
 
 	// Getters for individual registers
-	inline unsigned char A() const { return (AF & 0xFF00) >> 8;}
-	inline unsigned char F() const { return ( AF & 0x00FF);}
-	inline unsigned char B() const { return ( (BC & 0xFF00) >> 8);}
-	inline unsigned char C() const { return ( BC & 0x00FF);}
-	inline unsigned char D() const { return ( (DE & 0xFF00) >> 8);}
-	inline unsigned char E() const { return ( DE & 0x00FF);}
-	inline unsigned char H() const { return ( (HL & 0xFF00) >> 8);} // Higher register of HL (HL+)
-	inline unsigned char L() const { return ( HL & 0x00FF);} // Lower register of HL (HL-)
+	[[nodiscard]] constexpr std::uint8_t A() const noexcept { return highByte(AF); }
+	[[nodiscard]] constexpr std::uint8_t F() const noexcept { return lowByte(AF); }
+	[[nodiscard]] constexpr std::uint8_t B() const noexcept { return highByte(BC); }
+	[[nodiscard]] constexpr std::uint8_t C() const noexcept { return lowByte(BC); }
+	[[nodiscard]] constexpr std::uint8_t D() const noexcept { return highByte(DE); }
+	[[nodiscard]] constexpr std::uint8_t E() const noexcept { return lowByte(DE); }
+	[[nodiscard]] constexpr std::uint8_t H() const noexcept { return highByte(HL); } // Higher register of HL (HL+)
+	[[nodiscard]] constexpr std::uint8_t L() const noexcept { return lowByte(HL); } // Lower register of HL (HL-)
 
 	// Memory
-	unsigned char memory[0x10000]; // 16 bit address bus
+	std::array<std::uint8_t, 0x10000> memory{}; // 16 bit address bus
 
-	unsigned short opcode;
+	// Reads memory; addresses wrap around at 16 bits (e.g. PC + 1 when PC = 0xFFFF)
+	[[nodiscard]] std::uint8_t readByte(std::uint16_t addr) const noexcept { return memory[addr]; }
 
 	void initialize();
 
-	void executeOpcode(short opcode);
-	void loadReg(unsigned char high, unsigned char low, unsigned short &reg);
-	void storeReg(unsigned char reg, unsigned short loc);
-	void incReg(int amount, unsigned short &reg, MODE mode);
-	void incMem(int amount, unsigned short loc);
-	void rotate(unsigned short &regPair, bool carry, DIRECTION d, MODE mode);
-	void addPairs(unsigned short &storeReg, unsigned short &reg);
+	void executeOpcode(std::uint16_t opcode);
+	void loadReg(std::uint8_t high, std::uint8_t low, std::uint16_t &reg);
+	void storeReg(std::uint8_t value, std::uint16_t loc);
+	void incReg(int amount, std::uint16_t &reg, Mode mode);
+	void incMem(int amount, std::uint16_t loc);
+	void rotate(std::uint16_t &regPair, bool useCarry, Direction d, Mode mode);
+	void addPairs(std::uint16_t &target, std::uint16_t value);
+
+private:
+	[[nodiscard]] std::uint16_t &pairReg(std::uint8_t p) noexcept;
+	void setFlag(std::uint16_t flag, bool set) noexcept;
 };
 
-void CPU::initialize(){
+inline void CPU::initialize(){
 	AF = 0;
 	BC = 0;
 	DE = 0;
@@ -72,138 +82,126 @@ void CPU::initialize(){
 	PC = 0x00; // Stating point of ROM
 }
 
-void CPU::executeOpcode(short input){
-	opcode = input;
-
-	unsigned char x = (opcode & 0b11000000) >> 6; // 1st octal digit
-	unsigned char y = (opcode & 0b00111000) >> 3; // 2nd octal digit
-	unsigned char z = opcode & 0b00000111; // 3rd octal digit
-	unsigned char p = (opcode & 0b00110000) >> 4; // y rightshifted by 1 (bits 5-4 of y)
-	unsigned char q = (opcode & 0b00001000) >> 3; // y mod 2 (bit 3 of y)
+inline void CPU::executeOpcode(std::uint16_t opcode){
+	const auto p = static_cast<std::uint8_t>((opcode & 0b00110000) >> 4); // bits 5-4 of opcode, selects register pair
 
 	switch(opcode & 0xFF00){
 		case 0x0000: // 8-bit opcodes
 			if (opcode <= 0x3F){ // First 4 rows of opcodes
-				unsigned short *ddReg; // Register pair targets
-				switch (p) {
-					case 0b00: ddReg = &BC; break;
-					case 0b01: ddReg = &DE; break;
-					case 0b10: ddReg = &HL; break;
-					case 0b11: ddReg = &SP; break;
-				}
+				std::uint16_t &ddReg = pairReg(p); // Register pair target
 				switch(opcode & 0x000F){
 					case 0x00: {
-						signed char e = memory[PC + 1];
+						const auto e = static_cast<std::int8_t>(readByte(PC + 1));
 						switch (p) {
 							case 0b00: PC++; break; // NOP
 							case 0b01: PC += 2; break; // STOP
-							case 0b10: PC += (((AF & zFlag) >> 7)? 0: e) + 2; break; // JR NZ, e
-							case 0b11: PC += (((AF & cFlag) >> 4)? 0: e) + 2; break; // JR NC, e
+							case 0b10: PC += ((AF & zFlag)? 0: e) + 2; break; // JR NZ, e
+							case 0b11: PC += ((AF & cFlag)? 0: e) + 2; break; // JR NC, e
 						}
 						break;
 					}
-					case 0x01: loadReg(memory[PC+2], memory[PC+1], *ddReg); PC+= 3; break;
-					case 0x02: 
+					case 0x01: loadReg(readByte(PC + 2), readByte(PC + 1), ddReg); PC += 3; break;
+					case 0x02:
 						switch (opcode){
-							case 0x22: storeReg(A(), HL); incReg(1, HL, PAIR); break;
-							case 0x32: storeReg(A(), HL); incReg(-1, HL, PAIR); break;
-							default: storeReg(A(), *ddReg); break;
+							case 0x22: storeReg(A(), HL); incReg(1, HL, Mode::Pair); break;
+							case 0x32: storeReg(A(), HL); incReg(-1, HL, Mode::Pair); break;
+							default: storeReg(A(), ddReg); break;
 						}
 						PC++;
 						break;
-					case 0x03: incReg(1, *ddReg, PAIR); PC++; break;
-					case 0x04: 
+					case 0x03: incReg(1, ddReg, Mode::Pair); PC++; break;
+					case 0x04:
 						if (opcode == 0x34){
 							incMem(1, HL);
 						} else {
-							incReg(1, *ddReg, HIGH); 
+							incReg(1, ddReg, Mode::High);
 						}
-						PC++; 
+						PC++;
 						break;
-					case 0x05: 
-						if (opcode == 0x35) { 
+					case 0x05:
+						if (opcode == 0x35) {
 							incMem(-1, HL);
 						} else {
-							incReg(-1, *ddReg, HIGH); 
+							incReg(-1, ddReg, Mode::High);
 						}
-						PC++; 
+						PC++;
 						break;
-					case 0x06: 
-						if (opcode == 0x36) { 
-							storeReg(memory[PC+1], HL);
+					case 0x06:
+						if (opcode == 0x36) {
+							storeReg(readByte(PC + 1), HL);
 						} else {
-							loadReg(memory[PC+1], (*ddReg & 0x00FF), *ddReg); 
-						}						
-						PC+=2; 
-						break;
-					case 0x07: 
-						switch (p){
-							case 0b00: rotate(AF, false, LEFT, HIGH); PC++; break;
-							case 0b01: rotate(AF, true, LEFT, HIGH); PC++; break;
-							case 0b10: PC++; break; // DO WHEN FINISHED IMPLEMENTING ADD/SUB LOGIC
-							case 0b11: AF |= cFlag; AF &= ~(nFlag | hFlag); PC++; break; // Set carry flag | unset negative & HC flags
+							loadReg(readByte(PC + 1), lowByte(ddReg), ddReg);
 						}
+						PC += 2;
+						break;
+					case 0x07:
+						switch (p){
+							case 0b00: rotate(AF, false, Direction::Left, Mode::High); break;
+							case 0b01: rotate(AF, true, Direction::Left, Mode::High); break;
+							case 0b10: break; // DO WHEN FINISHED IMPLEMENTING ADD/SUB LOGIC
+							case 0b11: setFlag(cFlag, true); setFlag(nFlag | hFlag, false); break; // Set carry flag | unset negative & HC flags
+						}
+						PC++;
 						break;
 					case 0x08: {
-						signed char e = memory[PC + 1];
+						const auto e = static_cast<std::int8_t>(readByte(PC + 1));
 						switch (p) {
 							case 0b00: { // LD (u16), SP
-								unsigned short addr = (memory[PC + 2] << 8) | memory[PC + 1];
-								storeReg((SP & 0x00FF), addr);
-								storeReg(((SP & 0xFF00) >> 8), addr + 1);
+								const auto addr = static_cast<std::uint16_t>((readByte(PC + 2) << 8) | readByte(PC + 1));
+								storeReg(lowByte(SP), addr);
+								storeReg(highByte(SP), addr + 1);
 								PC += 3;
 								break;
 							}
 							case 0b01: PC += e + 2; break;
-							case 0b10: PC += (((AF & zFlag) >> 7)? e: 0) + 2; break;
-							case 0b11: PC += (((AF & cFlag) >> 4)? e: 0) + 2; break;
+							case 0b10: PC += ((AF & zFlag)? e: 0) + 2; break;
+							case 0b11: PC += ((AF & cFlag)? e: 0) + 2; break;
 						}
 						break;
 					}
-					case 0x09: addPairs(HL, *ddReg); PC++; break;
-					case 0x0A: 
+					case 0x09: addPairs(HL, ddReg); PC++; break;
+					case 0x0A:
 						switch (opcode){
-							case 0x2A: loadReg(memory[HL], (AF & 0xFF), AF); incReg(1, HL, PAIR); break;
-							case 0x3A: loadReg(memory[HL], (AF & 0xFF), AF); incReg(-1, HL, PAIR); break;
-							default: loadReg(memory[*ddReg], (AF & 0xFF), AF); break;
+							case 0x2A: loadReg(readByte(HL), F(), AF); incReg(1, HL, Mode::Pair); break;
+							case 0x3A: loadReg(readByte(HL), F(), AF); incReg(-1, HL, Mode::Pair); break;
+							default: loadReg(readByte(ddReg), F(), AF); break;
 						}
 						PC++;
 						break;
-					case 0x0B: incReg(-1, *ddReg, PAIR); PC++; break;
-					case 0x0C: 
+					case 0x0B: incReg(-1, ddReg, Mode::Pair); PC++; break;
+					case 0x0C:
 						if (p == 0b11){
-							incReg(1, AF, HIGH);
+							incReg(1, AF, Mode::High);
 						} else {
-							incReg(1, *ddReg, LOW); 
+							incReg(1, ddReg, Mode::Low);
 						}
-						PC++; 
+						PC++;
 						break;
-					case 0x0D: 
+					case 0x0D:
 						if (p == 0b11){
-							incReg(-1, AF, HIGH);
+							incReg(-1, AF, Mode::High);
 						} else {
-							incReg(-1, *ddReg, LOW); 
+							incReg(-1, ddReg, Mode::Low);
 						}
-						PC++; 
-						break;					
-					case 0x0E: 
-						if (p == 0b11){
-							loadReg(memory[PC+1], F(), AF);
-						} else {
-							loadReg(((*ddReg & 0xFF00) >> 8), memory[PC+1], *ddReg);
-						}
-						PC+=2; 
+						PC++;
 						break;
-					case 0x0F: 
+					case 0x0E:
+						if (p == 0b11){
+							loadReg(readByte(PC + 1), F(), AF);
+						} else {
+							loadReg(highByte(ddReg), readByte(PC + 1), ddReg);
+						}
+						PC += 2;
+						break;
+					case 0x0F:
 						switch (p){
-							case 0b00: rotate(AF, false, RIGHT, HIGH); break;
-							case 0b01: rotate(AF, true, RIGHT, HIGH); break;
-							case 0b10: AF = ((~A() & 0xFF) << 8) | F() | nFlag | hFlag; break; // CPL: set negative & HC flags
-							case 0b11: AF ^= cFlag; AF &= ~(nFlag | hFlag); break; // CCF: flip carry | unset negative & HC flags
+							case 0b00: rotate(AF, false, Direction::Right, Mode::High); break;
+							case 0b01: rotate(AF, true, Direction::Right, Mode::High); break;
+							case 0b10: loadReg(static_cast<std::uint8_t>(~A()), F(), AF); setFlag(nFlag | hFlag, true); break; // CPL: set negative & HC flags
+							case 0b11: AF ^= cFlag; setFlag(nFlag | hFlag, false); break; // CCF: flip carry | unset negative & HC flags
 						}
 						PC++;
 						break;
-					default: printf("Unknown opcode: 0x%X\n", opcode); break;
 				}
 			}
 			break;
@@ -212,47 +210,69 @@ void CPU::executeOpcode(short input){
 
 			break;
 
-		default: printf("Unknown opcode: 0x%X\n", opcode); break;	
+		default: std::cerr << std::format("Unknown opcode: 0x{:X}\n", opcode); break;
+	}
+}
+
+/**
+ * Returns the register pair selected by bits 5-4 of the opcode.
+ */
+inline std::uint16_t &CPU::pairReg(std::uint8_t p) noexcept {
+	switch (p) {
+		case 0b00: return BC;
+		case 0b01: return DE;
+		case 0b10: return HL;
+		default: return SP;
+	}
+}
+
+/**
+ * Sets (or unsets) the given flag/s in F.
+ */
+inline void CPU::setFlag(std::uint16_t flag, bool set) noexcept {
+	if (set){
+		AF |= flag;
+	} else {
+		AF &= ~flag;
 	}
 }
 
 /**
  * Loads data into register.
  */
-void CPU::loadReg(unsigned char high, unsigned char low, unsigned short &reg){
-	reg = (high << 8) | low;
+inline void CPU::loadReg(std::uint8_t high, std::uint8_t low, std::uint16_t &reg){
+	reg = static_cast<std::uint16_t>((high << 8) | low);
 }
 
 /**
  * Stores register into memory.
  */
-void CPU::storeReg(unsigned char reg, unsigned short loc){
-	memory[loc] = reg;
+inline void CPU::storeReg(std::uint8_t value, std::uint16_t loc){
+	memory[loc] = value;
 }
 
 /**
  * Increments registers.
  * \param mode determines if higher/lower/both register/s are incremented.
  */
-void CPU::incReg(int amount, unsigned short &reg, MODE mode){
-	if (mode == PAIR){
-		reg += amount;
+inline void CPU::incReg(int amount, std::uint16_t &reg, Mode mode){
+	if (mode == Mode::Pair){
+		reg = static_cast<std::uint16_t>(reg + amount);
 	} else {
-		int shift = (mode == HIGH)? 8:0; // Shift of 8 if on the higher bit; 0 otherwise
-		unsigned char halfReg = (reg >> shift) & 0x00FF; // Shifting register pair then masking the lower register to get the register
-		AF &= ~ (zFlag | hFlag); // unset both flags temporarily
+		const int shift = (mode == Mode::High)? 8:0; // Shift of 8 if on the higher bit; 0 otherwise
+		const auto halfReg = static_cast<std::uint8_t>(reg >> shift); // Shifting register pair then masking the lower register to get the register
 		if (amount > 0){
-			if (halfReg == 0xFF) AF |= zFlag;
-			if ((halfReg & 0x0F) == 0x0F) AF |= hFlag; // carry from bit 3
-			AF &= ~nFlag; // Unset nFlag
+			setFlag(zFlag, halfReg == 0xFF);
+			setFlag(hFlag, (halfReg & 0x0F) == 0x0F); // carry from bit 3
+			setFlag(nFlag, false);
 		} else {
-			if (halfReg == 1) AF |= zFlag;
-			if ((halfReg & 0x0F) == 0x00) AF |= hFlag; // borrow from bit 4
-			AF |= nFlag; // set nFlag
+			setFlag(zFlag, halfReg == 1);
+			setFlag(hFlag, (halfReg & 0x0F) == 0x00); // borrow from bit 4
+			setFlag(nFlag, true);
 		}
-		halfReg += amount;
-		unsigned short mask = (mode == HIGH)? 0x00FF:0xFF00; // Mask for other register
-		reg = (halfReg << shift) | (reg & mask);
+		const auto result = static_cast<std::uint8_t>(halfReg + amount);
+		const std::uint16_t mask = (mode == Mode::High)? 0x00FF:0xFF00; // Mask for other register
+		reg = static_cast<std::uint16_t>((result << shift) | (reg & mask));
 	}
 }
 
@@ -260,75 +280,58 @@ void CPU::incReg(int amount, unsigned short &reg, MODE mode){
 /**
  * Increments memory at location of register `loc`.
  */
-void CPU::incMem(int amount, unsigned short loc){
-	unsigned char &targetMem = memory[loc];
-	AF &= ~ (zFlag | hFlag); // unset both flags temporarily
+inline void CPU::incMem(int amount, std::uint16_t loc){
+	std::uint8_t &targetMem = memory[loc];
 	if (amount > 0){
-		if (targetMem == 0xFF) AF |= zFlag;
-		if ((targetMem & 0x0F) == 0x0F) AF |= hFlag; // carry from bit 3
-		AF &= ~nFlag; // Unset nFlag
+		setFlag(zFlag, targetMem == 0xFF);
+		setFlag(hFlag, (targetMem & 0x0F) == 0x0F); // carry from bit 3
+		setFlag(nFlag, false);
 	} else {
-		if (targetMem == 1) AF |= zFlag;
-		if ((targetMem & 0x0F) == 0x00) AF |= hFlag; // borrow from bit 4
-		AF |= nFlag; // set nFlag
+		setFlag(zFlag, targetMem == 1);
+		setFlag(hFlag, (targetMem & 0x0F) == 0x00); // borrow from bit 4
+		setFlag(nFlag, true);
 	}
-	targetMem += amount;
+	targetMem = static_cast<std::uint8_t>(targetMem + amount);
 }
 
 /**
- * Rotate register `LEFT` or `RIGHT`.
- * 
- * \param reg Target register pair.
+ * Rotate register `Left` or `Right`.
+ *
+ * \param regPair Target register pair.
  * \param useCarry True if uses carry for rotation, false if only last bit is copied to carry.
- * \param d Rotate `LEFT` or `RIGHT`.
+ * \param d Rotate `Left` or `Right`.
  * \param mode Register that is rotated.
  */
-void CPU::rotate(unsigned short &regPair, bool useCarry, DIRECTION d, MODE mode){
-	if (mode == PAIR){
+inline void CPU::rotate(std::uint16_t &regPair, bool useCarry, Direction d, Mode mode){
+	if (mode == Mode::Pair){
 		// TODO: rotate pair
 	} else {
-		int shift = (mode == HIGH)? 8:0; // Shift of 8 if on the higher bit; 0 otherwise
-		unsigned char reg = (regPair >> shift) & 0x00FF; // Shifting register pair then masking the lower register to get the register
-		unsigned char newReg;
-		if (d == LEFT){ // LEFT rotation
-			newReg = reg << 1;
-			newReg = (newReg & 0b11111110) | ((useCarry)? (AF & cFlag) >> 4:(reg & 0b10000000) >> 7); // first bit is set to last of original
-			if ((reg & 0b10000000) >> 7){
-				AF |= cFlag;
-			} else {
-				AF &= ~cFlag;
-			}
-		} else { // RIGHT rotation
-			newReg = reg >> 1;
-			newReg = (((useCarry)? (AF & cFlag) >> 4:reg & 0x01) << 7) | (newReg & 0b01111111);
-			if (reg & 0x01){
-				AF |= cFlag;
-			} else {
-				AF &= ~cFlag;
-			}
+		const int shift = (mode == Mode::High)? 8:0; // Shift of 8 if on the higher bit; 0 otherwise
+		const auto reg = static_cast<std::uint8_t>(regPair >> shift); // Shifting register pair then masking the lower register to get the register
+		const int carryIn = (AF & cFlag)? 1: 0;
+		std::uint8_t newReg;
+		if (d == Direction::Left){
+			newReg = static_cast<std::uint8_t>((reg << 1) | (useCarry? carryIn: reg >> 7)); // first bit is carry or last bit of original
+			setFlag(cFlag, reg & 0x80);
+		} else {
+			newReg = static_cast<std::uint8_t>((reg >> 1) | ((useCarry? carryIn: reg & 0x01) << 7)); // last bit is carry or first bit of original
+			setFlag(cFlag, reg & 0x01);
 		}
-		AF &= ~(zFlag | nFlag | hFlag);
-		regPair = (newReg << shift) | regPair & ((shift==8)?0x00FF:0xFF00); //other (unchanged) register pair is opposite mask of rotated register
+		setFlag(zFlag | nFlag | hFlag, false);
+		const std::uint16_t mask = (mode == Mode::High)? 0x00FF:0xFF00; // other (unchanged) register is opposite mask of rotated register
+		regPair = static_cast<std::uint16_t>((newReg << shift) | (regPair & mask));
 	}
 }
 
 /**
- * Adds registers `storeReg` and  `reg` and stores result in `storeReg`.
+ * Adds `value` to register pair `target` and stores result in `target`.
  */
-void CPU::addPairs(unsigned short &storeReg, unsigned short &reg){
-	AF &= ~nFlag; // Unset negative flag
-	unsigned short halfMask = 0b111111111111; // Mask for first 11 bits of registers
-	if ((storeReg & halfMask) + (reg & halfMask) > halfMask){ // Checking for half Carry-over (bit 11 carry)
-		AF |= hFlag;
-	} else {
-		AF &= ~hFlag;
-	}
-	if (storeReg + reg > 0xFFFF){ // Checking for carry-over
-		AF |= cFlag;
-	} else {
-		AF &= ~cFlag;
-	}
-	storeReg = storeReg + reg;
+inline void CPU::addPairs(std::uint16_t &target, std::uint16_t value){
+	setFlag(nFlag, false); // Unset negative flag
+	constexpr std::uint16_t halfMask = 0x0FFF; // Mask for first 12 bits of registers
+	setFlag(hFlag, (target & halfMask) + (value & halfMask) > halfMask); // Checking for half Carry-over (bit 11 carry)
+	setFlag(cFlag, target + value > 0xFFFF); // Checking for carry-over
+	target = static_cast<std::uint16_t>(target + value);
 }
 
 #endif
