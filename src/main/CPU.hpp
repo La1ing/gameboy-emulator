@@ -40,6 +40,8 @@ public:
 	std::uint16_t SP{}; // Stack pointer
 	std::uint16_t PC{}; // Program counter
 
+	bool halted{}; // Set by HALT; CPU idles until an interrupt (not implemented yet)
+
 	// Getters for individual registers
 	[[nodiscard]] constexpr std::uint8_t A() const noexcept { return highByte(AF); }
 	[[nodiscard]] constexpr std::uint8_t F() const noexcept { return lowByte(AF); }

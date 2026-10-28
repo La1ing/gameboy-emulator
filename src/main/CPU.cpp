@@ -10,9 +10,13 @@ void CPU::initialize(){
 	HL = 0;
 	SP = 0;
 	PC = 0x00; // Stating point of ROM
+	halted = false;
 }
 
 int CPU::step(){
+	if (halted){
+		return 1; // Idle for one M-cycle; waking up needs interrupts
+	}
 	const std::uint8_t opcode = readByte(PC);
 	if (opcode == 0xCB){
 		return executeOpcode(static_cast<std::uint16_t>(0xCB00 | readByte(PC + 1)));
@@ -182,7 +186,15 @@ int CPU::execBlock0(std::uint8_t opcode){
  * 0x40-0x7F: LD r, r' and HALT.
  */
 int CPU::execBlock1(std::uint8_t opcode){
-	return unimplemented(opcode);
+	PC++;
+	if (opcode == 0x76){ // HALT (would be LD (HL), (HL))
+		halted = true;
+		return 1;
+	}
+	const auto y = static_cast<std::uint8_t>((opcode >> 3) & 0b111); // destination
+	const auto z = static_cast<std::uint8_t>(opcode & 0b111); // source
+	setR8(y, getR8(z));
+	return (y == 6 || z == 6)? 2: 1; // (HL) access takes an extra M-cycle
 }
 
 /**

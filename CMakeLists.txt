@@ -27,6 +27,7 @@ target_link_libraries(emulator PRIVATE gb_core)
 add_executable(tests
     src/tests/catch_main.cpp
     src/tests/test_block0.cpp
+    src/tests/test_ld.cpp
 )
 target_link_libraries(tests PRIVATE gb_core)
 
