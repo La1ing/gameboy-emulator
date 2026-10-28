@@ -28,6 +28,7 @@ add_executable(tests
     src/tests/catch_main.cpp
     src/tests/test_block0.cpp
     src/tests/test_ld.cpp
+    src/tests/test_alu.cpp
 )
 target_link_libraries(tests PRIVATE gb_core)
 

@@ -107,7 +107,7 @@ int CPU::execBlock0(std::uint8_t opcode){
 			switch (p){
 				case 0b00: rotate(AF, false, Direction::Left, Mode::High); break;
 				case 0b01: rotate(AF, true, Direction::Left, Mode::High); break;
-				case 0b10: break; // DO WHEN FINISHED IMPLEMENTING ADD/SUB LOGIC
+				case 0b10: daa(); break;
 				case 0b11: setFlag(cFlag, true); setFlag(nFlag | hFlag, false); break; // Set carry flag | unset negative & HC flags
 			}
 			PC++;
@@ -201,13 +201,24 @@ int CPU::execBlock1(std::uint8_t opcode){
  * 0x80-0xBF: 8-bit ALU on A and r.
  */
 int CPU::execBlock2(std::uint8_t opcode){
-	return unimplemented(opcode);
+	const auto y = static_cast<std::uint8_t>((opcode >> 3) & 0b111); // operation
+	const auto z = static_cast<std::uint8_t>(opcode & 0b111); // operand
+	alu(y, getR8(z));
+	PC++;
+	return (z == 6)? 2: 1; // (HL) access takes an extra M-cycle
 }
 
 /**
  * 0xC0-0xFF: control flow, stack, high-page loads and immediate ALU.
  */
 int CPU::execBlock3(std::uint8_t opcode){
+	const auto y = static_cast<std::uint8_t>((opcode >> 3) & 0b111);
+	const auto z = static_cast<std::uint8_t>(opcode & 0b111);
+	if (z == 6){ // ADD/ADC/SUB/SBC/AND/XOR/OR/CP A, d8
+		alu(y, readByte(PC + 1));
+		PC += 2;
+		return 2;
+	}
 	return unimplemented(opcode);
 }
 
@@ -301,6 +312,74 @@ bool CPU::cond(std::uint8_t cc) const noexcept {
 		case 2: return !(AF & cFlag);
 		default: return AF & cFlag;
 	}
+}
+
+/**
+ * 8-bit ALU operation on A by its opcode index: ADD, ADC, SUB, SBC, AND, XOR, OR, CP.
+ */
+void CPU::alu(std::uint8_t op, std::uint8_t value) noexcept {
+	const std::uint8_t a = A();
+	const int carry = (op == 1 || op == 3) && (AF & cFlag)? 1: 0; // carry-in for ADC / SBC
+	int result;
+	switch (op) {
+		case 0: case 1: // ADD / ADC
+			result = a + value + carry;
+			setFlag(hFlag, (a & 0x0F) + (value & 0x0F) + carry > 0x0F);
+			setFlag(cFlag, result > 0xFF);
+			setFlag(nFlag, false);
+			break;
+		case 2: case 3: case 7: // SUB / SBC / CP
+			result = a - value - carry;
+			setFlag(hFlag, (a & 0x0F) < (value & 0x0F) + carry);
+			setFlag(cFlag, result < 0);
+			setFlag(nFlag, true);
+			break;
+		case 4: // AND
+			result = a & value;
+			setFlag(nFlag | cFlag, false);
+			setFlag(hFlag, true);
+			break;
+		case 5: // XOR
+			result = a ^ value;
+			setFlag(nFlag | hFlag | cFlag, false);
+			break;
+		default: // OR
+			result = a | value;
+			setFlag(nFlag | hFlag | cFlag, false);
+			break;
+	}
+	setFlag(zFlag, (result & 0xFF) == 0);
+	if (op != 7){ // CP only sets flags
+		loadReg(static_cast<std::uint8_t>(result), F(), AF);
+	}
+}
+
+/**
+ * Decimal adjusts A after a BCD addition / subtraction (uses N, H and C from the previous op).
+ */
+void CPU::daa() noexcept {
+	int a = A();
+	bool carry = AF & cFlag;
+	if (!(AF & nFlag)){ // after addition
+		if (carry || a > 0x99){
+			a += 0x60;
+			carry = true;
+		}
+		if ((AF & hFlag) || (a & 0x0F) > 0x09){
+			a += 0x06;
+		}
+	} else { // after subtraction
+		if (carry){
+			a -= 0x60;
+		}
+		if (AF & hFlag){
+			a -= 0x06;
+		}
+	}
+	setFlag(zFlag, (a & 0xFF) == 0);
+	setFlag(hFlag, false);
+	setFlag(cFlag, carry);
+	loadReg(static_cast<std::uint8_t>(a), F(), AF);
 }
 
 /**

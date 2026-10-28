@@ -93,6 +93,8 @@ private:
 	void setFlag(std::uint16_t flag, bool set) noexcept;
 
 	// Operations
+	void alu(std::uint8_t op, std::uint8_t value) noexcept;
+	void daa() noexcept;
 	void loadReg(std::uint8_t high, std::uint8_t low, std::uint16_t &reg);
 	void storeReg(std::uint8_t value, std::uint16_t loc);
 	void incReg(int amount, std::uint16_t &reg, Mode mode);
