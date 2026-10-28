@@ -469,3 +469,83 @@ TEST_CASE_METHOD(CPUTest, "INC/DEC r & (HL) set half carry on bit 3/4 carry/borr
     REQUIRE(cpu.memory[0xC000] == 0x2F);
     REQUIRE(cpu.AF == (nFlag | hFlag));
 }
+
+TEST_CASE_METHOD(CPUTest, "0x*4/*5/*C/*D:(INC/DEC r & (HL)) carry flag unchanged") {
+    cpu.AF = cFlag;
+    cpu.BC = 0x1000;
+    cpu.executeOpcode(0x0004); // INC B
+    REQUIRE(cpu.BC == 0x1100);
+    REQUIRE(cpu.AF == cFlag);
+    cpu.executeOpcode(0x000D); // DEC C: 0x00 -> 0xFF
+    REQUIRE(cpu.BC == 0x11FF);
+    REQUIRE(cpu.AF == (nFlag | hFlag | cFlag));
+    cpu.HL = 0xC000;
+    cpu.memory[0xC000] = 0x05;
+    cpu.executeOpcode(0x0034); // INC (HL)
+    REQUIRE(cpu.memory[0xC000] == 0x06);
+    REQUIRE(cpu.AF == cFlag);
+    cpu.executeOpcode(0x0035); // DEC (HL)
+    REQUIRE(cpu.memory[0xC000] == 0x05);
+    REQUIRE(cpu.AF == (nFlag | cFlag));
+}
+
+TEST_CASE_METHOD(CPUTest, "0x*9:(ADD HL, dd) zero flag unchanged") {
+    cpu.AF = zFlag;
+    cpu.HL = 0x0001;
+    cpu.BC = 0x0001;
+    cpu.executeOpcode(0x0009);
+    REQUIRE(cpu.HL == 0x0002);
+    REQUIRE(cpu.AF == zFlag);
+}
+
+TEST_CASE_METHOD(CPUTest, "0x1F:(RRA) old carry rotated into bit 7") {
+    cpu.AF = 0x0000 | cFlag;
+    cpu.executeOpcode(0x001F);
+    REQUIRE(cpu.AF == 0x8000); // A = 0x80 | carry unset (bit 0 was 0)
+}
+
+TEST_CASE_METHOD(CPUTest, "0x07/0F:(RLCA/RRCA) carry unset when rotated-out bit is 0") {
+    cpu.AF = 0x0100 | cFlag;
+    cpu.executeOpcode(0x0007);
+    REQUIRE(cpu.AF == 0x0200);
+    cpu.AF = 0x0200 | cFlag;
+    cpu.executeOpcode(0x000F);
+    REQUIRE(cpu.AF == 0x0100);
+}
+
+TEST_CASE_METHOD(CPUTest, "0x28/38:(JR cc, e) negative offsets") {
+    cpu.PC = 0x0020;
+    cpu.memory[0x21] = 0xF0; // -16
+    cpu.AF = zFlag;
+    cpu.executeOpcode(0x28);
+    REQUIRE(cpu.PC == 0x0012); // 0x20 - 16 + 2
+    cpu.AF = 0x0000;
+    cpu.memory[0x13] = 0xF0;
+    cpu.executeOpcode(0x28);
+    REQUIRE(cpu.PC == 0x0014); // not taken
+
+    cpu.PC = 0x0040;
+    cpu.memory[0x41] = 0x80; // -128
+    cpu.AF = cFlag;
+    cpu.executeOpcode(0x38);
+    REQUIRE(cpu.PC == 0xFFC2); // 0x40 - 128 + 2 wraps around
+}
+
+TEST_CASE_METHOD(CPUTest, "0x32/2A:(LD (HL-), A / LD A, (HL+)) HL wraps around") {
+    cpu.AF = 0x7700;
+    cpu.HL = 0x0000;
+    cpu.executeOpcode(0x0032);
+    REQUIRE(cpu.memory[0x0000] == 0x77);
+    REQUIRE(cpu.HL == 0xFFFF);
+    cpu.memory[0xFFFF] = 0x99;
+    cpu.executeOpcode(0x002A);
+    REQUIRE(cpu.AF == 0x9900);
+    REQUIRE(cpu.HL == 0x0000);
+    REQUIRE(cpu.PC == 2);
+}
+
+TEST_CASE_METHOD(CPUTest, "0x37:(SCF) zero flag stays unset") {
+    cpu.AF = nFlag | hFlag;
+    cpu.executeOpcode(0x0037);
+    REQUIRE(cpu.AF == cFlag);
+}
