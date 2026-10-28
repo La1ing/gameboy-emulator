@@ -11,17 +11,25 @@ void CPU::initialize(){
 	SP = 0;
 	PC = 0x00; // Stating point of ROM
 	halted = false;
+	locked = false;
+	ime = false;
+	imePending = false;
 }
 
 int CPU::step(){
-	if (halted){
-		return 1; // Idle for one M-cycle; waking up needs interrupts
+	if (halted || locked){
+		return 1; // Idle for one M-cycle; waking up from HALT needs interrupts
 	}
+	const bool enableIme = imePending; // EI from the previous instruction takes effect after this one
 	const std::uint8_t opcode = readByte(PC);
-	if (opcode == 0xCB){
-		return executeOpcode(static_cast<std::uint16_t>(0xCB00 | readByte(PC + 1)));
+	const int cycles = (opcode == 0xCB)
+		? executeOpcode(static_cast<std::uint16_t>(0xCB00 | readByte(PC + 1)))
+		: executeOpcode(opcode);
+	if (enableIme && imePending){ // a DI in between cancels it
+		ime = true;
+		imePending = false;
 	}
-	return executeOpcode(opcode);
+	return cycles;
 }
 
 int CPU::executeOpcode(std::uint16_t opcode){
@@ -214,12 +222,120 @@ int CPU::execBlock2(std::uint8_t opcode){
 int CPU::execBlock3(std::uint8_t opcode){
 	const auto y = static_cast<std::uint8_t>((opcode >> 3) & 0b111);
 	const auto z = static_cast<std::uint8_t>(opcode & 0b111);
-	if (z == 6){ // ADD/ADC/SUB/SBC/AND/XOR/OR/CP A, d8
-		alu(y, readByte(PC + 1));
-		PC += 2;
-		return 2;
+	const auto p = static_cast<std::uint8_t>(y >> 1); // register pair select
+	const bool q = y & 1;
+
+	switch (z){
+		case 0:
+			switch (y){
+				case 4: storeReg(A(), static_cast<std::uint16_t>(0xFF00 | readByte(PC + 1))); PC += 2; return 3; // LDH (a8), A
+				case 5: SP = spPlusE(static_cast<std::int8_t>(readByte(PC + 1))); PC += 2; return 4; // ADD SP, e
+				case 6: loadReg(readByte(static_cast<std::uint16_t>(0xFF00 | readByte(PC + 1))), F(), AF); PC += 2; return 3; // LDH A, (a8)
+				case 7: HL = spPlusE(static_cast<std::int8_t>(readByte(PC + 1))); PC += 2; return 3; // LD HL, SP+e
+				default: // RET cc
+					if (cond(y)){
+						PC = pop16();
+						return 5;
+					}
+					PC++;
+					return 2;
+			}
+		case 1:
+			if (!q){ // POP rr
+				const std::uint16_t value = pop16();
+				if (p == 0b11){
+					AF = value & 0xFFF0; // lower nibble of F is always 0
+				} else {
+					pairReg(p) = value;
+				}
+				PC++;
+				return 3;
+			}
+			switch (p){
+				case 0b00: PC = pop16(); return 4; // RET
+				case 0b01: PC = pop16(); ime = true; imePending = false; return 4; // RETI: IME set immediately
+				case 0b10: PC = HL; return 1; // JP HL
+				default: SP = HL; PC++; return 2; // LD SP, HL
+			}
+		case 2:
+			switch (y){
+				case 4: storeReg(A(), static_cast<std::uint16_t>(0xFF00 | C())); PC++; return 2; // LD (C), A
+				case 5: storeReg(A(), read16(PC + 1)); PC += 3; return 4; // LD (a16), A
+				case 6: loadReg(readByte(static_cast<std::uint16_t>(0xFF00 | C())), F(), AF); PC++; return 2; // LD A, (C)
+				case 7: loadReg(readByte(read16(PC + 1)), F(), AF); PC += 3; return 4; // LD A, (a16)
+				default: // JP cc, a16
+					if (cond(y)){
+						PC = read16(PC + 1);
+						return 4;
+					}
+					PC += 3;
+					return 3;
+			}
+		case 3:
+			switch (y){
+				case 0: PC = read16(PC + 1); return 4; // JP a16
+				case 1: return unimplemented(opcode); // 0xCB prefix: CB opcodes are passed as 0xCBxx
+				case 6: ime = false; imePending = false; PC++; return 1; // DI
+				case 7: imePending = true; PC++; return 1; // EI: IME is set after the next instruction
+				default: return lock(); // 0xD3, 0xDB, 0xE3, 0xEB
+			}
+		case 4:
+			if (y < 4){ // CALL cc, a16
+				if (cond(y)){
+					call(read16(PC + 1));
+					return 6;
+				}
+				PC += 3;
+				return 3;
+			}
+			return lock(); // 0xE4, 0xEC, 0xF4, 0xFC
+		case 5:
+			if (!q){ // PUSH rr
+				push16((p == 0b11)? AF: pairReg(p));
+				PC++;
+				return 4;
+			}
+			if (p == 0b00){ // CALL a16
+				call(read16(PC + 1));
+				return 6;
+			}
+			return lock(); // 0xDD, 0xED, 0xFD
+		case 6: // ADD/ADC/SUB/SBC/AND/XOR/OR/CP A, d8
+			alu(y, readByte(PC + 1));
+			PC += 2;
+			return 2;
+		default: // RST y*8
+			push16(static_cast<std::uint16_t>(PC + 1));
+			PC = static_cast<std::uint16_t>(y * 8);
+			return 4;
 	}
-	return unimplemented(opcode);
+}
+
+/**
+ * Calls `target`: pushes the address of the next instruction (CALL is 3 bytes) and jumps.
+ */
+void CPU::call(std::uint16_t target) noexcept {
+	push16(static_cast<std::uint16_t>(PC + 3));
+	PC = target;
+}
+
+/**
+ * Illegal opcode: hard-locks the CPU until power off.
+ */
+int CPU::lock() noexcept {
+	locked = true;
+	return 1;
+}
+
+/**
+ * SP + signed `e` for ADD SP, e and LD HL, SP+e. H and C come from the unsigned add of the lower byte.
+ */
+std::uint16_t CPU::spPlusE(std::int8_t e) noexcept {
+	const auto offset = static_cast<std::uint8_t>(e);
+	setFlag(zFlag | nFlag, false);
+	setFlag(hFlag, (SP & 0x0F) + (offset & 0x0F) > 0x0F); // carry from bit 3
+	setFlag(cFlag, (SP & 0xFF) + offset > 0xFF); // carry from bit 7
+	return static_cast<std::uint16_t>(SP + e);
 }
 
 /**

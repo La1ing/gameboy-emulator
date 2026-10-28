@@ -41,6 +41,8 @@ public:
 	std::uint16_t PC{}; // Program counter
 
 	bool halted{}; // Set by HALT; CPU idles until an interrupt (not implemented yet)
+	bool locked{}; // Set by an illegal opcode; CPU hard-locks until power off
+	bool ime{}; // Interrupt master enable (set by EI / RETI, cleared by DI)
 
 	// Getters for individual registers
 	[[nodiscard]] constexpr std::uint8_t A() const noexcept { return highByte(AF); }
@@ -74,6 +76,8 @@ public:
 	int executeOpcode(std::uint16_t opcode);
 
 private:
+	bool imePending{}; // EI was executed; IME is set after the next instruction
+
 	// Opcode blocks, selected by bits 7-6 of the opcode (x = 1st octal digit)
 	int execBlock0(std::uint8_t opcode);
 	int execBlock1(std::uint8_t opcode);
@@ -95,6 +99,9 @@ private:
 	// Operations
 	void alu(std::uint8_t op, std::uint8_t value) noexcept;
 	void daa() noexcept;
+	void call(std::uint16_t target) noexcept;
+	int lock() noexcept;
+	[[nodiscard]] std::uint16_t spPlusE(std::int8_t e) noexcept;
 	void loadReg(std::uint8_t high, std::uint8_t low, std::uint16_t &reg);
 	void storeReg(std::uint8_t value, std::uint16_t loc);
 	void incReg(int amount, std::uint16_t &reg, Mode mode);
