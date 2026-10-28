@@ -1,14 +1,5 @@
-
-#define CATCH_CONFIG_MAIN
-#include "catch.hpp"
-#include "../main/CPU.hpp"
-
-struct CPUTest{
-    CPU cpu;
-    CPUTest(){
-        cpu.initialize();
-    }
-};
+// Opcodes 0x00-0x3F
+#include "test_fixture.hpp"
 
 TEST_CASE_METHOD(CPUTest, "0x00:(NOP) correctly increment PC") {
     cpu.executeOpcode(0x0000);
@@ -548,4 +539,46 @@ TEST_CASE_METHOD(CPUTest, "0x37:(SCF) zero flag stays unset") {
     cpu.AF = nFlag | hFlag;
     cpu.executeOpcode(0x0037);
     REQUIRE(cpu.AF == cFlag);
+}
+
+TEST_CASE_METHOD(CPUTest, "0x00-0x3F: M-cycles match the opcode table") {
+    // Conditional jumps (0x20/28/30/38) are checked separately
+    auto [opcode, cycles] = GENERATE(table<std::uint16_t, int>({
+        {0x00, 1}, {0x01, 3}, {0x02, 2}, {0x03, 2}, {0x04, 1}, {0x05, 1}, {0x06, 2}, {0x07, 1},
+        {0x08, 5}, {0x09, 2}, {0x0A, 2}, {0x0B, 2}, {0x0C, 1}, {0x0D, 1}, {0x0E, 2}, {0x0F, 1},
+        {0x10, 1}, {0x11, 3}, {0x12, 2}, {0x13, 2}, {0x14, 1}, {0x15, 1}, {0x16, 2}, {0x17, 1},
+        {0x18, 3}, {0x19, 2}, {0x1A, 2}, {0x1B, 2}, {0x1C, 1}, {0x1D, 1}, {0x1E, 2}, {0x1F, 1},
+                   {0x21, 3}, {0x22, 2}, {0x23, 2}, {0x24, 1}, {0x25, 1}, {0x26, 2}, {0x27, 1},
+                   {0x29, 2}, {0x2A, 2}, {0x2B, 2}, {0x2C, 1}, {0x2D, 1}, {0x2E, 2}, {0x2F, 1},
+                   {0x31, 3}, {0x32, 2}, {0x33, 2}, {0x34, 3}, {0x35, 3}, {0x36, 3}, {0x37, 1},
+                   {0x39, 2}, {0x3A, 2}, {0x3B, 2}, {0x3C, 1}, {0x3D, 1}, {0x3E, 2}, {0x3F, 1},
+    }));
+    CAPTURE(opcode);
+    cpu.HL = 0xC000; // (HL) opcodes target work RAM
+    REQUIRE(cpu.executeOpcode(opcode) == cycles);
+}
+
+TEST_CASE_METHOD(CPUTest, "0x20/28/30/38:(JR cc, e) 3 M-cycles if taken, 2 if not") {
+    auto [opcode, flags, cycles] = GENERATE(table<std::uint16_t, std::uint16_t, int>({
+        {0x20, 0, 3}, {0x20, zFlag, 2},
+        {0x28, zFlag, 3}, {0x28, 0, 2},
+        {0x30, 0, 3}, {0x30, cFlag, 2},
+        {0x38, cFlag, 3}, {0x38, 0, 2},
+    }));
+    CAPTURE(opcode, flags);
+    cpu.AF = flags;
+    REQUIRE(cpu.executeOpcode(opcode) == cycles);
+}
+
+TEST_CASE_METHOD(CPUTest, "step() fetches the opcode at PC and executes it") {
+    cpu.PC = 0x0100;
+    cpu.memory[0x0100] = 0x06; // LD B, d8
+    cpu.memory[0x0101] = 0x42;
+    cpu.memory[0x0102] = 0x04; // INC B
+    REQUIRE(cpu.step() == 2);
+    REQUIRE(cpu.B() == 0x42);
+    REQUIRE(cpu.PC == 0x0102);
+    REQUIRE(cpu.step() == 1);
+    REQUIRE(cpu.B() == 0x43);
+    REQUIRE(cpu.PC == 0x0103);
 }
