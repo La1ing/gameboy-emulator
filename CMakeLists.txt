@@ -8,7 +8,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(GB_UBSAN "Build with UndefinedBehaviorSanitizer (trap mode, works with MinGW)" OFF)
 
 # Emulator core, shared by the emulator and the tests
-add_library(gb_core STATIC src/main/CPU.cpp)
+add_library(gb_core STATIC
+    src/main/CPU.cpp
+    src/main/Bus.cpp
+)
 target_include_directories(gb_core PUBLIC src/main)
 if (MSVC)
     target_compile_options(gb_core PUBLIC /W4 /permissive-)
@@ -33,6 +36,7 @@ add_executable(tests
     src/tests/test_cb.cpp
     src/tests/test_sweep.cpp
     src/tests/test_interrupts.cpp
+    src/tests/test_bus.cpp
 )
 target_link_libraries(tests PRIVATE gb_core)
 
