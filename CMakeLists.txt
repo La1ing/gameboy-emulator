@@ -11,6 +11,7 @@ option(GB_UBSAN "Build with UndefinedBehaviorSanitizer (trap mode, works with Mi
 add_library(gb_core STATIC
     src/main/CPU.cpp
     src/main/Bus.cpp
+    src/main/Cartridge.cpp
 )
 target_include_directories(gb_core PUBLIC src/main)
 if (MSVC)
@@ -37,6 +38,7 @@ add_executable(tests
     src/tests/test_sweep.cpp
     src/tests/test_interrupts.cpp
     src/tests/test_bus.cpp
+    src/tests/test_cartridge.cpp
 )
 target_link_libraries(tests PRIVATE gb_core)
 
