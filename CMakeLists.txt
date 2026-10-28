@@ -32,6 +32,7 @@ add_executable(tests
     src/tests/test_control.cpp
     src/tests/test_cb.cpp
     src/tests/test_sweep.cpp
+    src/tests/test_interrupts.cpp
 )
 target_link_libraries(tests PRIVATE gb_core)
 

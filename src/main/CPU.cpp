@@ -1,7 +1,9 @@
 #include "CPU.hpp"
 
+#include <bit>
 #include <format>
 #include <iostream>
+#include <utility>
 
 void CPU::initialize(){
 	AF = 0;
@@ -14,14 +16,33 @@ void CPU::initialize(){
 	locked = false;
 	ime = false;
 	imePending = false;
+	haltBug = false;
 }
 
 int CPU::step(){
-	if (halted || locked){
-		return 1; // Idle for one M-cycle; waking up from HALT needs interrupts
+	if (locked){
+		return 1;
 	}
+	const std::uint8_t pending = pendingInterrupts();
+	if (halted){
+		if (!pending){
+			return 1; // Idle for one M-cycle
+		}
+		halted = false; // Wake up; the interrupt is only serviced if IME is set
+	}
+	const bool bugged = std::exchange(haltBug, false);
+	if (ime && pending){
+		if (bugged){
+			PC--; // Handler returns to the HALT (EI right before a bugged HALT)
+		}
+		return serviceInterrupt(pending);
+	}
+
 	const bool enableIme = imePending; // EI from the previous instruction takes effect after this one
 	const std::uint8_t opcode = readByte(PC);
+	if (bugged){
+		PC--; // HALT bug: PC is not incremented after the fetch, so the byte after HALT is read twice
+	}
 	const int cycles = (opcode == 0xCB)
 		? executeOpcode(static_cast<std::uint16_t>(0xCB00 | readByte(PC + 1)))
 		: executeOpcode(opcode);
@@ -30,6 +51,30 @@ int CPU::step(){
 		imePending = false;
 	}
 	return cycles;
+}
+
+void CPU::requestInterrupt(Interrupt interrupt) noexcept {
+	storeReg(static_cast<std::uint8_t>(readByte(ifAddress) | (1 << static_cast<int>(interrupt))), ifAddress);
+}
+
+/**
+ * Interrupts that are both requested (IF) and enabled (IE).
+ */
+std::uint8_t CPU::pendingInterrupts() const noexcept {
+	return readByte(ifAddress) & readByte(ieAddress) & 0x1F;
+}
+
+/**
+ * Calls the handler of the highest priority pending interrupt (lowest bit): clears its IF bit and IME,
+ * pushes PC and jumps to 0x40 + 8 * bit. Takes 5 M-cycles (2 wait, 2 push, 1 jump).
+ */
+int CPU::serviceInterrupt(std::uint8_t pending){
+	const int bit = std::countr_zero(pending);
+	storeReg(static_cast<std::uint8_t>(readByte(ifAddress) & ~(1 << bit)), ifAddress);
+	ime = false;
+	push16(PC);
+	PC = static_cast<std::uint16_t>(0x40 + 8 * bit);
+	return 5;
 }
 
 int CPU::executeOpcode(std::uint16_t opcode){
@@ -196,7 +241,11 @@ int CPU::execBlock0(std::uint8_t opcode){
 int CPU::execBlock1(std::uint8_t opcode){
 	PC++;
 	if (opcode == 0x76){ // HALT (would be LD (HL), (HL))
-		halted = true;
+		if (!ime && pendingInterrupts()){
+			haltBug = true; // HALT exits at once, and the byte after it is read twice
+		} else {
+			halted = true;
+		}
 		return 1;
 	}
 	const auto y = static_cast<std::uint8_t>((opcode >> 3) & 0b111); // destination

@@ -24,6 +24,16 @@ inline constexpr std::uint16_t cFlag = 1 << 4;
  */
 enum class Mode {High, Low, Pair};
 
+// Interrupt registers: IE enables an interrupt, IF requests it (bits 0-4 below)
+inline constexpr std::uint16_t ieAddress = 0xFFFF;
+inline constexpr std::uint16_t ifAddress = 0xFF0F;
+
+/**
+ * Interrupt sources by their IE / IF bit; lower bit has higher priority.
+ * Handler address is 0x40 + 8 * bit.
+ */
+enum class Interrupt : std::uint8_t {VBlank, Stat, Timer, Serial, Joypad};
+
 // Higher / lower byte of a register pair
 [[nodiscard]] constexpr std::uint8_t highByte(std::uint16_t pair) noexcept { return static_cast<std::uint8_t>(pair >> 8); }
 [[nodiscard]] constexpr std::uint8_t lowByte(std::uint16_t pair) noexcept { return static_cast<std::uint8_t>(pair & 0x00FF); }
@@ -38,7 +48,7 @@ public:
 	std::uint16_t SP{}; // Stack pointer
 	std::uint16_t PC{}; // Program counter
 
-	bool halted{}; // Set by HALT; CPU idles until an interrupt (not implemented yet)
+	bool halted{}; // Set by HALT; CPU idles until an interrupt is pending (IE & IF)
 	bool locked{}; // Set by an illegal opcode; CPU hard-locks until power off
 	bool ime{}; // Interrupt master enable (set by EI / RETI, cleared by DI)
 
@@ -61,10 +71,14 @@ public:
 	void initialize();
 
 	/**
-	 * Fetches the opcode at PC (and the byte after a 0xCB prefix) and executes it.
+	 * Services a pending interrupt if IME is set, otherwise fetches the opcode at PC
+	 * (and the byte after a 0xCB prefix) and executes it. Wakes up from HALT once an interrupt is pending.
 	 * \return M-cycles taken.
 	 */
 	int step();
+
+	// Sets the interrupt's bit in IF
+	void requestInterrupt(Interrupt interrupt) noexcept;
 
 	/**
 	 * Executes `opcode`; its operands are read from memory after PC.
@@ -75,6 +89,10 @@ public:
 
 private:
 	bool imePending{}; // EI was executed; IME is set after the next instruction
+	bool haltBug{}; // HALT ran with IME unset and an interrupt pending; next byte is read twice
+
+	[[nodiscard]] std::uint8_t pendingInterrupts() const noexcept;
+	int serviceInterrupt(std::uint8_t pending);
 
 	// Opcode blocks, selected by bits 7-6 of the opcode (x = 1st octal digit)
 	int execBlock0(std::uint8_t opcode);
