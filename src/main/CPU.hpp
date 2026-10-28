@@ -24,8 +24,6 @@ inline constexpr std::uint16_t cFlag = 1 << 4;
  */
 enum class Mode {High, Low, Pair};
 
-enum class Direction {Left, Right};
-
 // Higher / lower byte of a register pair
 [[nodiscard]] constexpr std::uint8_t highByte(std::uint16_t pair) noexcept { return static_cast<std::uint8_t>(pair >> 8); }
 [[nodiscard]] constexpr std::uint8_t lowByte(std::uint16_t pair) noexcept { return static_cast<std::uint8_t>(pair & 0x00FF); }
@@ -106,7 +104,7 @@ private:
 	void storeReg(std::uint8_t value, std::uint16_t loc);
 	void incReg(int amount, std::uint16_t &reg, Mode mode);
 	void incMem(int amount, std::uint16_t loc);
-	void rotate(std::uint16_t &regPair, bool useCarry, Direction d, Mode mode);
+	[[nodiscard]] std::uint8_t shiftRotate(std::uint8_t op, std::uint8_t value) noexcept;
 	void addPairs(std::uint16_t &target, std::uint16_t value);
 };
 

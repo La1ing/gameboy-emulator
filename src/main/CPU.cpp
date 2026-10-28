@@ -113,8 +113,8 @@ int CPU::execBlock0(std::uint8_t opcode){
 			break;
 		case 0x07:
 			switch (p){
-				case 0b00: rotate(AF, false, Direction::Left, Mode::High); break;
-				case 0b01: rotate(AF, true, Direction::Left, Mode::High); break;
+				case 0b00: setR8(7, shiftRotate(0, A())); setFlag(zFlag, false); break; // RLCA: RLC A, but Z always unset
+				case 0b01: setR8(7, shiftRotate(2, A())); setFlag(zFlag, false); break; // RLA: RL A, but Z always unset
 				case 0b10: daa(); break;
 				case 0b11: setFlag(cFlag, true); setFlag(nFlag | hFlag, false); break; // Set carry flag | unset negative & HC flags
 			}
@@ -179,8 +179,8 @@ int CPU::execBlock0(std::uint8_t opcode){
 			break;
 		case 0x0F:
 			switch (p){
-				case 0b00: rotate(AF, false, Direction::Right, Mode::High); break;
-				case 0b01: rotate(AF, true, Direction::Right, Mode::High); break;
+				case 0b00: setR8(7, shiftRotate(1, A())); setFlag(zFlag, false); break; // RRCA: RRC A, but Z always unset
+				case 0b01: setR8(7, shiftRotate(3, A())); setFlag(zFlag, false); break; // RRA: RR A, but Z always unset
 				case 0b10: loadReg(static_cast<std::uint8_t>(~A()), F(), AF); setFlag(nFlag | hFlag, true); break; // CPL: set negative & HC flags
 				case 0b11: AF ^= cFlag; setFlag(nFlag | hFlag, false); break; // CCF: flip carry | unset negative & HC flags
 			}
@@ -342,7 +342,24 @@ std::uint16_t CPU::spPlusE(std::int8_t e) noexcept {
  * CB-prefixed opcodes: rotates/shifts, BIT, RES and SET.
  */
 int CPU::execCB(std::uint8_t opcode){
-	return unimplemented(static_cast<std::uint16_t>(0xCB00 | opcode));
+	const auto x = static_cast<std::uint8_t>(opcode >> 6); // operation group
+	const auto y = static_cast<std::uint8_t>((opcode >> 3) & 0b111); // rotate/shift op or bit number
+	const auto z = static_cast<std::uint8_t>(opcode & 0b111); // operand
+	const std::uint8_t value = getR8(z);
+	const auto bit = static_cast<std::uint8_t>(1 << y);
+	PC += 2;
+
+	switch (x) {
+		case 0: setR8(z, shiftRotate(y, value)); break;
+		case 1: // BIT y, r: Z set if bit is 0 | unset N | set H
+			setFlag(zFlag, !(value & bit));
+			setFlag(nFlag, false);
+			setFlag(hFlag, true);
+			return (z == 6)? 3: 2; // (HL) is only read
+		case 2: setR8(z, static_cast<std::uint8_t>(value & ~bit)); break; // RES y, r
+		default: setR8(z, static_cast<std::uint8_t>(value | bit)); break; // SET y, r
+	}
+	return (z == 6)? 4: 2; // (HL) is read and written
 }
 
 int CPU::unimplemented(std::uint16_t opcode){
@@ -567,32 +584,29 @@ void CPU::incMem(int amount, std::uint16_t loc){
 }
 
 /**
- * Rotate register `Left` or `Right`.
- *
- * \param regPair Target register pair.
- * \param useCarry True if uses carry for rotation, false if only last bit is copied to carry.
- * \param d Rotate `Left` or `Right`.
- * \param mode Register that is rotated.
+ * Rotate / shift by its CB opcode index: RLC, RRC, RL, RR, SLA, SRA, SWAP, SRL.
+ * Sets Z from the result, unsets N and H, and C from the bit shifted out (unset for SWAP).
+ * \return Rotated / shifted value.
  */
-void CPU::rotate(std::uint16_t &regPair, bool useCarry, Direction d, Mode mode){
-	if (mode == Mode::Pair){
-		// TODO: rotate pair
-	} else {
-		const int shift = (mode == Mode::High)? 8:0; // Shift of 8 if on the higher bit; 0 otherwise
-		const auto reg = static_cast<std::uint8_t>(regPair >> shift); // Shifting register pair then masking the lower register to get the register
-		const int carryIn = (AF & cFlag)? 1: 0;
-		std::uint8_t newReg;
-		if (d == Direction::Left){
-			newReg = static_cast<std::uint8_t>((reg << 1) | (useCarry? carryIn: reg >> 7)); // first bit is carry or last bit of original
-			setFlag(cFlag, reg & 0x80);
-		} else {
-			newReg = static_cast<std::uint8_t>((reg >> 1) | ((useCarry? carryIn: reg & 0x01) << 7)); // last bit is carry or first bit of original
-			setFlag(cFlag, reg & 0x01);
-		}
-		setFlag(zFlag | nFlag | hFlag, false);
-		const std::uint16_t mask = (mode == Mode::High)? 0x00FF:0xFF00; // other (unchanged) register is opposite mask of rotated register
-		regPair = static_cast<std::uint16_t>((newReg << shift) | (regPair & mask));
+std::uint8_t CPU::shiftRotate(std::uint8_t op, std::uint8_t value) noexcept {
+	const int carryIn = (AF & cFlag)? 1: 0;
+	int result;
+	bool carryOut;
+	switch (op) {
+		case 0: carryOut = value & 0x80; result = (value << 1) | (value >> 7); break; // RLC: bit 7 to bit 0 and carry
+		case 1: carryOut = value & 0x01; result = (value >> 1) | (value << 7); break; // RRC: bit 0 to bit 7 and carry
+		case 2: carryOut = value & 0x80; result = (value << 1) | carryIn; break; // RL: through carry
+		case 3: carryOut = value & 0x01; result = (value >> 1) | (carryIn << 7); break; // RR: through carry
+		case 4: carryOut = value & 0x80; result = value << 1; break; // SLA
+		case 5: carryOut = value & 0x01; result = (value >> 1) | (value & 0x80); break; // SRA: bit 7 kept
+		case 6: carryOut = false; result = (value << 4) | (value >> 4); break; // SWAP nibbles
+		default: carryOut = value & 0x01; result = value >> 1; break; // SRL
 	}
+	const auto newValue = static_cast<std::uint8_t>(result);
+	setFlag(zFlag, newValue == 0);
+	setFlag(nFlag | hFlag, false);
+	setFlag(cFlag, carryOut);
+	return newValue;
 }
 
 /**
