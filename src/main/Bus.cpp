@@ -1,5 +1,17 @@
 #include "Bus.hpp"
 
+/**
+ * Serial transfer with the internal clock and no link partner (Pan Docs: Serial Data Transfer):
+ * the byte in SB is sent (kept in serialOutput), SB receives 0xFF, SC bit 7 clears and the serial
+ * interrupt is requested. Happens at once; the real transfer takes 8 bits at 8192 Hz.
+ */
+void Bus::transferSerial() noexcept {
+	serialData += static_cast<char>(io[serialTransferData - 0xFF00]);
+	io[serialTransferData - 0xFF00] = 0xFF;
+	io[serialControl - 0xFF00] &= 0x7F;
+	io[0x0F] |= 0x08; // IF: serial interrupt
+}
+
 std::uint8_t Bus::read(std::uint16_t addr) const noexcept {
 	if (addr < 0x8000 || (addr >= 0xA000 && addr < 0xC000)){ // Cartridge ROM / RAM
 		return cartridge? cartridge->read(addr): 0xFF; // Empty slot reads as open bus
@@ -31,6 +43,9 @@ void Bus::write(std::uint16_t addr, std::uint8_t value) noexcept {
 		// Not usable: writes ignored
 	} else if (addr < 0xFF80){
 		io[addr - 0xFF00] = value;
+		if (addr == serialControl && (value & 0x81) == 0x81){
+			transferSerial();
+		}
 	} else if (addr < 0xFFFF){
 		hram[addr - 0xFF80] = value;
 	} else {

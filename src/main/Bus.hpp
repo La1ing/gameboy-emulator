@@ -7,6 +7,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <utility>
 
 /**
@@ -25,7 +26,14 @@ public:
 	[[nodiscard]] std::uint8_t read(std::uint16_t addr) const noexcept override;
 	void write(std::uint16_t addr, std::uint8_t value) noexcept override;
 
+	// Every byte sent over the serial port (test ROMs print their results this way)
+	[[nodiscard]] const std::string &serialOutput() const noexcept { return serialData; }
+
+	static constexpr std::uint16_t serialTransferData = 0xFF01; // SB
+	static constexpr std::uint16_t serialControl = 0xFF02; // SC: bit 7 start, bit 0 internal clock
+
 private:
+	std::string serialData;
 	std::unique_ptr<Cartridge> cartridge;
 	std::array<std::uint8_t, 0x2000> vram{};
 	std::array<std::uint8_t, 0x2000> wram{};
@@ -33,6 +41,8 @@ private:
 	std::array<std::uint8_t, 0x80> io{}; // Placeholder until timer / PPU / joypad own their registers
 	std::array<std::uint8_t, 0x7F> hram{};
 	std::uint8_t ie{};
+
+	void transferSerial() noexcept;
 };
 
 #endif
