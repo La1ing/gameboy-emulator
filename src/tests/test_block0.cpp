@@ -9,17 +9,17 @@ TEST_CASE_METHOD(CPUTest, "0x00:(NOP) correctly increment PC") {
 TEST_CASE_METHOD(CPUTest, "0x*1:(LD dd, u16) load 2 bytes of immediate data") {
     cpu.PC = 0x00; // Start PC at 0
     // load data for BC
-    cpu.memory[0x01] = 0x37;
-    cpu.memory[0x02] = 0x13;
+    memory[0x01] = 0x37;
+    memory[0x02] = 0x13;
     // load data for DE
-    cpu.memory[0x04] = 0xBC;
-    cpu.memory[0x05] = 0xFC;
+    memory[0x04] = 0xBC;
+    memory[0x05] = 0xFC;
     // load data for HL
-    cpu.memory[0x07] = 0xCD;
-    cpu.memory[0x08] = 0xAB;
+    memory[0x07] = 0xCD;
+    memory[0x08] = 0xAB;
     // load data for SP
-    cpu.memory[0x0A] = 0x27;
-    cpu.memory[0x0B] = 0x72;
+    memory[0x0A] = 0x27;
+    memory[0x0B] = 0x72;
     cpu.executeOpcode(0x0001); // BC
     cpu.executeOpcode(0x0011); // DE
     cpu.executeOpcode(0x0021); // HL
@@ -36,7 +36,7 @@ TEST_CASE_METHOD(CPUTest, "0x02:(LD (BC), A) register stored in correct location
     cpu.BC = 0x205F;
     cpu.AF = (0x3F << 8) | cpu.F();
     cpu.executeOpcode(0x0002);
-    REQUIRE(cpu.memory[0x205F] == 0x3F);
+    REQUIRE(memory[0x205F] == 0x3F);
     REQUIRE(cpu.PC == 0x0001);
 }
 
@@ -45,15 +45,15 @@ TEST_CASE_METHOD(CPUTest, "0x*2:(LD (dd), A) register stored in correct location
     cpu.HL = 0xFFFF;
     cpu.AF = 0x3F00;
     cpu.executeOpcode(0x0012);
-    REQUIRE(cpu.memory[0x207F] == 0x3F);
+    REQUIRE(memory[0x207F] == 0x3F);
     cpu.AF = 0x5600;
     cpu.executeOpcode(0x0022);
-    REQUIRE(cpu.memory[0xFFFF] == 0x56);
+    REQUIRE(memory[0xFFFF] == 0x56);
     REQUIRE(cpu.HL == 0x00);
     cpu.AF = 0x4200;
     cpu.HL = 0x4000;
     cpu.executeOpcode(0x0032);
-    REQUIRE(cpu.memory[0x4000] == 0x42);
+    REQUIRE(memory[0x4000] == 0x42);
     REQUIRE(cpu.HL == 0x3FFF);
     REQUIRE(cpu.PC == 0x0003);
 }
@@ -100,12 +100,12 @@ TEST_CASE_METHOD(CPUTest, "0x*4:(INC r) increment r (higher pair)") {
     cpu.executeOpcode(0x24);
     REQUIRE(cpu.HL == 0xA700);
     REQUIRE(cpu.AF == 0x0000); 
-    cpu.memory[0xA700] = 0xFF;
+    memory[0xA700] = 0xFF;
     cpu.executeOpcode(0x34);
-    REQUIRE(cpu.memory[0xA700] == 0x00);
+    REQUIRE(memory[0xA700] == 0x00);
     REQUIRE(cpu.AF == (zFlag | hFlag));
     cpu.executeOpcode(0x34);
-    REQUIRE(cpu.memory[0xA700] == 0x01);
+    REQUIRE(memory[0xA700] == 0x01);
     REQUIRE(cpu.AF == 0x0000);
     REQUIRE(cpu.PC == 0x0005);
 }
@@ -133,12 +133,12 @@ TEST_CASE_METHOD(CPUTest, "0x*5:(DEC r) decrement r (higher pair)") {
     cpu.HL = 0x7600;
     cpu.executeOpcode(0x0025);
     REQUIRE(cpu.HL == 0x7500);  
-    cpu.memory[0x7500] = 0x01;
+    memory[0x7500] = 0x01;
     cpu.executeOpcode(0x0035);
-    REQUIRE(cpu.memory[0x7500] == 0x00);
+    REQUIRE(memory[0x7500] == 0x00);
     REQUIRE(cpu.AF == (zFlag | nFlag));
     cpu.executeOpcode(0x0035);
-    REQUIRE(cpu.memory[0x7500] == 0xFF);
+    REQUIRE(memory[0x7500] == 0xFF);
     REQUIRE(cpu.AF == (nFlag | hFlag));
     REQUIRE(cpu.PC == 0x0005);
 }
@@ -154,21 +154,21 @@ TEST_CASE_METHOD(CPUTest, "0x05:(DEC B) decrement B w/ overflow") {
 
 TEST_CASE_METHOD(CPUTest, "0x*6:(LD r, u8) loading 8-bit immediate data into r (higher pair)") {
     cpu.PC = 0x00; // Start PC at 0
-    cpu.memory[0x01] = 0x24;
+    memory[0x01] = 0x24;
     cpu.executeOpcode(0x0006);
     REQUIRE(cpu.BC == 0x2400);
     REQUIRE(cpu.PC == 0x0002);
-    cpu.memory[0x03] = 0x25;
+    memory[0x03] = 0x25;
     cpu.executeOpcode(0x0016);
     REQUIRE(cpu.DE == 0x2500);
     REQUIRE(cpu.BC != 0x2500);
-    cpu.memory[0x05] = 0x26;
+    memory[0x05] = 0x26;
     cpu.executeOpcode(0x0026);
     REQUIRE(cpu.HL == 0x2600);
-    cpu.memory[0x07] = 0x28;
+    memory[0x07] = 0x28;
     cpu.HL = 0x0020;
     cpu.executeOpcode(0x0036);
-    REQUIRE(cpu.memory[0x020] == 0x28);
+    REQUIRE(memory[0x020] == 0x28);
     REQUIRE(cpu.PC == 0x0008);
 }
 
@@ -196,42 +196,42 @@ TEST_CASE_METHOD(CPUTest, "0x37:Set carry flag") {
 TEST_CASE_METHOD(CPUTest, "0x08:(LD (u16), SP) store SP into memory in u16 address") {
     cpu.SP = 0xFFF8;
     cpu.PC = 0xC100; // starting program counter from C100
-    cpu.memory[0xC101] = 0x00; // u16 address = 0xD000 (little endian)
-    cpu.memory[0xC102] = 0xD0;
+    memory[0xC101] = 0x00; // u16 address = 0xD000 (little endian)
+    memory[0xC102] = 0xD0;
     cpu.executeOpcode(0x0008);
-    REQUIRE(cpu.memory[0xD000] == 0xF8);
-    REQUIRE(cpu.memory[0xD001] == 0xFF);
+    REQUIRE(memory[0xD000] == 0xF8);
+    REQUIRE(memory[0xD001] == 0xFF);
     REQUIRE(cpu.PC == 0xC103);
 }
 
 TEST_CASE_METHOD(CPUTest, "0x18:(JR e) jump e steps") {
     cpu.PC = 0x0000;
-    cpu.memory[cpu.PC + 1] = 0b01111111; // 127
+    memory[cpu.PC + 1] = 0b01111111; // 127
     cpu.executeOpcode(0x18);
     REQUIRE(cpu.PC == 129); // Added by 129 (127 + 2)
-    cpu.memory[130] = 0b10000000; // -128
+    memory[130] = 0b10000000; // -128
     cpu.executeOpcode(0x18);
     REQUIRE(cpu.PC == 3); // Subtracted by 126 (-128 + 2)
 }
 
 TEST_CASE_METHOD(CPUTest, "0x28/38:(JR cc, e) jump e steps after condition cc") {
     cpu.PC = 0x0000;
-    cpu.memory[cpu.PC + 1] = 0x01; // 1
+    memory[cpu.PC + 1] = 0x01; // 1
     cpu.AF = 0x0000; // All flags unset
     cpu.executeOpcode(0x28);
     REQUIRE(cpu.PC == 2); // Jumps by 2 instead of 3 as z flag not set
     cpu.AF = zFlag;
-    cpu.memory[2 + 1] = 0x01;
+    memory[2 + 1] = 0x01;
     cpu.executeOpcode(0x28);
     REQUIRE(cpu.PC == 5);
 
     cpu.PC = 0x0000; // reset PC
-    cpu.memory[cpu.PC + 1] = 0x02; // 1
+    memory[cpu.PC + 1] = 0x02; // 1
     cpu.AF = 0x0000; // All flags unset
     cpu.executeOpcode(0x38);
     REQUIRE(cpu.PC == 2); // Jumps by 2 instead of 3 as z flag not set
     cpu.AF = cFlag;
-    cpu.memory[2 + 1] = 0x02;
+    memory[2 + 1] = 0x02;
     cpu.executeOpcode(0x38);
     REQUIRE(cpu.PC == 6);
 }
@@ -266,7 +266,7 @@ TEST_CASE_METHOD(CPUTest, "0x29:(ADD HL, HL), check full carry") {
 
 TEST_CASE_METHOD(CPUTest, "0x0A:(LD A, (BC)) loading memory[BC] into A") {
     cpu.BC = 0x0011;
-    cpu.memory[cpu.BC] = 0x5C;
+    memory[cpu.BC] = 0x5C;
     cpu.executeOpcode(0x000A);
     REQUIRE(cpu.AF == 0x5C00); // Register A = 0x2B (0b00101011) | carry flag set w/ rest unset
     REQUIRE(cpu.PC == 1);
@@ -274,13 +274,13 @@ TEST_CASE_METHOD(CPUTest, "0x0A:(LD A, (BC)) loading memory[BC] into A") {
 
 TEST_CASE_METHOD(CPUTest, "0x*A:(LD A, (dd)) loading memory[dd] into A") {
     cpu.DE = 0x0011;
-    cpu.memory[cpu.DE] = 0x5C;
+    memory[cpu.DE] = 0x5C;
     cpu.executeOpcode(0x001A);
     REQUIRE(cpu.AF == 0x5C00); // Register A = 0x2B (0b00101011) | carry flag set w/ rest unset
     REQUIRE(cpu.PC == 1);
     cpu.HL = 0x0003;
-    cpu.memory[0x0003] = 0x0A;
-    cpu.memory[0x0004] = 0x08;
+    memory[0x0003] = 0x0A;
+    memory[0x0004] = 0x08;
     cpu.executeOpcode(0x002A);
     REQUIRE(cpu.AF == 0x0A00);
     REQUIRE(cpu.HL == 0x0004);
@@ -363,24 +363,24 @@ TEST_CASE_METHOD(CPUTest, "0x*D:(DEC r) decrement register r (lower pair)") {
 TEST_CASE_METHOD(CPUTest, "0x0E:(LD r, d8) load immediate data into reg r (lower pair)") {
     cpu.PC = 0x05;
     cpu.BC = 0x4200; // Higher register must be left unchanged
-    cpu.memory[cpu.PC + 1] = 0x24;
+    memory[cpu.PC + 1] = 0x24;
     cpu.executeOpcode(0x000E);
     REQUIRE(cpu.BC == 0x4224);
     REQUIRE(cpu.PC == 7);
     cpu.PC = 0x00; // Restart PC at 0
-    cpu.memory[0x01] = 0x24;
+    memory[0x01] = 0x24;
     cpu.executeOpcode(0x000E);
     REQUIRE(cpu.BC == 0x4224);
     REQUIRE(cpu.PC == 0x0002);
     cpu.DE = 0x1100;
-    cpu.memory[0x03] = 0x25;
+    memory[0x03] = 0x25;
     cpu.executeOpcode(0x001E);
     REQUIRE(cpu.DE == 0x1125);
     cpu.HL = 0x3300;
-    cpu.memory[0x05] = 0x26;
+    memory[0x05] = 0x26;
     cpu.executeOpcode(0x002E);
     REQUIRE(cpu.HL == 0x3326);
-    cpu.memory[0x07] = 0x28;
+    memory[0x07] = 0x28;
     cpu.executeOpcode(0x003E);
     REQUIRE(cpu.AF == 0x2800);
     REQUIRE(cpu.PC == 0x0008);
@@ -407,17 +407,17 @@ TEST_CASE_METHOD(CPUTest, "0x10:(STOP) skips 2 bytes") {
 
 TEST_CASE_METHOD(CPUTest, "0x20/30:(JR ncc, e) jump e steps if condition flag unset") {
     cpu.PC = 0x0000;
-    cpu.memory[cpu.PC + 1] = 0x05;
+    memory[cpu.PC + 1] = 0x05;
     cpu.AF = zFlag; // Zero flag set, so no jump
     cpu.executeOpcode(0x20);
     REQUIRE(cpu.PC == 2);
     cpu.AF = 0x0000;
-    cpu.memory[2 + 1] = 0x05;
+    memory[2 + 1] = 0x05;
     cpu.executeOpcode(0x20);
     REQUIRE(cpu.PC == 9); // 2 + 5 + 2
 
     cpu.PC = 0x0010;
-    cpu.memory[0x11] = 0xFE; // -2
+    memory[0x11] = 0xFE; // -2
     cpu.AF = 0x0000; // Carry flag unset, so jump
     cpu.executeOpcode(0x30);
     REQUIRE(cpu.PC == 0x0010); // 0x10 - 2 + 2
@@ -452,12 +452,12 @@ TEST_CASE_METHOD(CPUTest, "INC/DEC r & (HL) set half carry on bit 3/4 carry/borr
     REQUIRE(cpu.BC == 0x0F00);
     REQUIRE(cpu.AF == (nFlag | hFlag));
     cpu.HL = 0xC000;
-    cpu.memory[0xC000] = 0x2F;
+    memory[0xC000] = 0x2F;
     cpu.executeOpcode(0x0034); // INC (HL): 0x2F -> 0x30
-    REQUIRE(cpu.memory[0xC000] == 0x30);
+    REQUIRE(memory[0xC000] == 0x30);
     REQUIRE(cpu.AF == hFlag);
     cpu.executeOpcode(0x0035); // DEC (HL): 0x30 -> 0x2F
-    REQUIRE(cpu.memory[0xC000] == 0x2F);
+    REQUIRE(memory[0xC000] == 0x2F);
     REQUIRE(cpu.AF == (nFlag | hFlag));
 }
 
@@ -471,12 +471,12 @@ TEST_CASE_METHOD(CPUTest, "0x*4/*5/*C/*D:(INC/DEC r & (HL)) carry flag unchanged
     REQUIRE(cpu.BC == 0x11FF);
     REQUIRE(cpu.AF == (nFlag | hFlag | cFlag));
     cpu.HL = 0xC000;
-    cpu.memory[0xC000] = 0x05;
+    memory[0xC000] = 0x05;
     cpu.executeOpcode(0x0034); // INC (HL)
-    REQUIRE(cpu.memory[0xC000] == 0x06);
+    REQUIRE(memory[0xC000] == 0x06);
     REQUIRE(cpu.AF == cFlag);
     cpu.executeOpcode(0x0035); // DEC (HL)
-    REQUIRE(cpu.memory[0xC000] == 0x05);
+    REQUIRE(memory[0xC000] == 0x05);
     REQUIRE(cpu.AF == (nFlag | cFlag));
 }
 
@@ -506,17 +506,17 @@ TEST_CASE_METHOD(CPUTest, "0x07/0F:(RLCA/RRCA) carry unset when rotated-out bit 
 
 TEST_CASE_METHOD(CPUTest, "0x28/38:(JR cc, e) negative offsets") {
     cpu.PC = 0x0020;
-    cpu.memory[0x21] = 0xF0; // -16
+    memory[0x21] = 0xF0; // -16
     cpu.AF = zFlag;
     cpu.executeOpcode(0x28);
     REQUIRE(cpu.PC == 0x0012); // 0x20 - 16 + 2
     cpu.AF = 0x0000;
-    cpu.memory[0x13] = 0xF0;
+    memory[0x13] = 0xF0;
     cpu.executeOpcode(0x28);
     REQUIRE(cpu.PC == 0x0014); // not taken
 
     cpu.PC = 0x0040;
-    cpu.memory[0x41] = 0x80; // -128
+    memory[0x41] = 0x80; // -128
     cpu.AF = cFlag;
     cpu.executeOpcode(0x38);
     REQUIRE(cpu.PC == 0xFFC2); // 0x40 - 128 + 2 wraps around
@@ -526,9 +526,9 @@ TEST_CASE_METHOD(CPUTest, "0x32/2A:(LD (HL-), A / LD A, (HL+)) HL wraps around")
     cpu.AF = 0x7700;
     cpu.HL = 0x0000;
     cpu.executeOpcode(0x0032);
-    REQUIRE(cpu.memory[0x0000] == 0x77);
+    REQUIRE(memory[0x0000] == 0x77);
     REQUIRE(cpu.HL == 0xFFFF);
-    cpu.memory[0xFFFF] = 0x99;
+    memory[0xFFFF] = 0x99;
     cpu.executeOpcode(0x002A);
     REQUIRE(cpu.AF == 0x9900);
     REQUIRE(cpu.HL == 0x0000);
@@ -572,9 +572,9 @@ TEST_CASE_METHOD(CPUTest, "0x20/28/30/38:(JR cc, e) 3 M-cycles if taken, 2 if no
 
 TEST_CASE_METHOD(CPUTest, "step() fetches the opcode at PC and executes it") {
     cpu.PC = 0x0100;
-    cpu.memory[0x0100] = 0x06; // LD B, d8
-    cpu.memory[0x0101] = 0x42;
-    cpu.memory[0x0102] = 0x04; // INC B
+    memory[0x0100] = 0x06; // LD B, d8
+    memory[0x0101] = 0x42;
+    memory[0x0102] = 0x04; // INC B
     REQUIRE(cpu.step() == 2);
     REQUIRE(cpu.B() == 0x42);
     REQUIRE(cpu.PC == 0x0102);

@@ -532,7 +532,8 @@ struct RunResult {
 };
 
 RunResult run(std::uint16_t opcode, std::uint16_t flags) {
-    CPU cpu;
+    FlatMemory memory;
+    CPU cpu{memory};
     cpu.initialize();
     cpu.AF = flags;
     cpu.HL = 0xC000;

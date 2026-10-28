@@ -586,7 +586,7 @@ void CPU::loadReg(std::uint8_t high, std::uint8_t low, std::uint16_t &reg){
  * Stores register into memory.
  */
 void CPU::storeReg(std::uint8_t value, std::uint16_t loc){
-	memory[loc] = value;
+	bus.write(loc, value);
 }
 
 /**
@@ -619,7 +619,7 @@ void CPU::incReg(int amount, std::uint16_t &reg, Mode mode){
  * Increments memory at location of register `loc`.
  */
 void CPU::incMem(int amount, std::uint16_t loc){
-	std::uint8_t &targetMem = memory[loc];
+	const std::uint8_t targetMem = readByte(loc);
 	if (amount > 0){
 		setFlag(zFlag, targetMem == 0xFF);
 		setFlag(hFlag, (targetMem & 0x0F) == 0x0F); // carry from bit 3
@@ -629,7 +629,7 @@ void CPU::incMem(int amount, std::uint16_t loc){
 		setFlag(hFlag, (targetMem & 0x0F) == 0x00); // borrow from bit 4
 		setFlag(nFlag, true);
 	}
-	targetMem = static_cast<std::uint8_t>(targetMem + amount);
+	storeReg(static_cast<std::uint8_t>(targetMem + amount), loc);
 }
 
 /**

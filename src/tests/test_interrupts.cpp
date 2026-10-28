@@ -38,12 +38,12 @@ constexpr const char *kName[5] = {"VBlank", "Stat", "Timer", "Serial", "Joypad"}
 
 constexpr std::uint8_t bit(int i) { return static_cast<std::uint8_t>(1u << i); }
 
-std::uint8_t &IE(CPU &cpu) { return cpu.memory[ieAddress]; }
-std::uint8_t &IF(CPU &cpu) { return cpu.memory[ifAddress]; }
+std::uint8_t &IE(FlatMemory &memory) { return memory[ieAddress]; }
+std::uint8_t &IF(FlatMemory &memory) { return memory[ifAddress]; }
 
 // Known register state, all memory NOP, IE = IF = 0, IME off
-void setup(CPU &cpu) {
-    cpu.memory.fill(0);
+void setup(CPU &cpu, FlatMemory &memory) {
+    memory = FlatMemory{};
     cpu.AF = 0x0000;
     cpu.BC = 0x0000;
     cpu.DE = 0xD4E5;
@@ -55,8 +55,8 @@ void setup(CPU &cpu) {
     cpu.locked = false;
 }
 
-std::uint16_t stackWord(const CPU &cpu, std::uint16_t addr) {
-    return static_cast<std::uint16_t>(cpu.memory[addr] | (cpu.memory[static_cast<std::uint16_t>(addr + 1)] << 8));
+std::uint16_t stackWord(const FlatMemory &memory, std::uint16_t addr) {
+    return static_cast<std::uint16_t>(memory[addr] | (memory[static_cast<std::uint16_t>(addr + 1)] << 8));
 }
 
 // Steps until pred() holds, at most maxSteps times. Returns true if pred() became true.
@@ -78,16 +78,16 @@ bool stepUntil(CPU &cpu, Pred pred, int maxSteps, std::vector<std::uint16_t> *pc
 // ---------------------------------------------------------------------------
 
 TEST_CASE_METHOD(CPUTest, "requestInterrupt() sets only its IF bit") {
-    setup(cpu);
+    setup(cpu, memory);
     const int i = GENERATE(range(0, 5));
     CAPTURE(kName[i]);
-    IF(cpu) = 0x00;
+    IF(memory) = 0x00;
     cpu.requestInterrupt(static_cast<Interrupt>(i));
-    REQUIRE((IF(cpu) & 0x1F) == bit(i));
+    REQUIRE((IF(memory) & 0x1F) == bit(i));
 
-    IF(cpu) = static_cast<std::uint8_t>(0x1F & ~bit(i));
+    IF(memory) = static_cast<std::uint8_t>(0x1F & ~bit(i));
     cpu.requestInterrupt(static_cast<Interrupt>(i));
-    REQUIRE((IF(cpu) & 0x1F) == 0x1F);
+    REQUIRE((IF(memory) & 0x1F) == 0x1F);
 }
 
 // ---------------------------------------------------------------------------
@@ -95,25 +95,25 @@ TEST_CASE_METHOD(CPUTest, "requestInterrupt() sets only its IF bit") {
 // ---------------------------------------------------------------------------
 
 TEST_CASE_METHOD(CPUTest, "Interrupt dispatch: IF bit and IME cleared, PC pushed, jump to vector, 5 cycles") {
-    setup(cpu);
+    setup(cpu, memory);
     const int i = GENERATE(range(0, 5));
     CAPTURE(kName[i]);
     cpu.PC = 0x1234;
-    cpu.memory[0x1234] = INC_A; // must not be executed
+    memory[0x1234] = INC_A; // must not be executed
     cpu.ime = true;
-    IE(cpu) = bit(i);           // only this one enabled
-    IF(cpu) = 0x1F;             // everything requested
+    IE(memory) = bit(i);           // only this one enabled
+    IF(memory) = 0x1F;             // everything requested
     CPU before = cpu;
 
     const int cycles = cpu.step();
 
     REQUIRE(cpu.PC == kVector[i]);
     REQUIRE_FALSE(cpu.ime);
-    REQUIRE((IF(cpu) & 0x1F) == (0x1F & ~bit(i))); // only the serviced bit is cleared
-    REQUIRE(IE(cpu) == bit(i));
+    REQUIRE((IF(memory) & 0x1F) == (0x1F & ~bit(i))); // only the serviced bit is cleared
+    REQUIRE(IE(memory) == bit(i));
     REQUIRE(cpu.SP == 0xDFEE);
-    REQUIRE(cpu.memory[0xDFEE] == 0x34); // low byte at SP
-    REQUIRE(cpu.memory[0xDFEF] == 0x12); // high byte at SP+1
+    REQUIRE(memory[0xDFEE] == 0x34); // low byte at SP
+    REQUIRE(memory[0xDFEF] == 0x12); // high byte at SP+1
     REQUIRE(cycles == 5);
     REQUIRE(cpu.AF == before.AF); // INC A not executed, flags untouched
     REQUIRE(cpu.BC == before.BC);
@@ -123,17 +123,17 @@ TEST_CASE_METHOD(CPUTest, "Interrupt dispatch: IF bit and IME cleared, PC pushed
 }
 
 TEST_CASE_METHOD(CPUTest, "Interrupt dispatch via requestInterrupt() with all of IE enabled") {
-    setup(cpu);
+    setup(cpu, memory);
     const int i = GENERATE(range(0, 5));
     CAPTURE(kName[i]);
     cpu.ime = true;
-    IE(cpu) = 0x1F;
+    IE(memory) = 0x1F;
     cpu.requestInterrupt(static_cast<Interrupt>(i));
 
     REQUIRE(cpu.step() == 5);
     REQUIRE(cpu.PC == kVector[i]);
-    REQUIRE((IF(cpu) & 0x1F) == 0x00);
-    REQUIRE(stackWord(cpu, cpu.SP) == 0x0200);
+    REQUIRE((IF(memory) & 0x1F) == 0x00);
+    REQUIRE(stackWord(memory, cpu.SP) == 0x0200);
     REQUIRE_FALSE(cpu.ime);
 }
 
@@ -142,44 +142,44 @@ TEST_CASE_METHOD(CPUTest, "Interrupt dispatch via requestInterrupt() with all of
 // ---------------------------------------------------------------------------
 
 TEST_CASE_METHOD(CPUTest, "No dispatch when IME is 0: instruction at PC runs, IF kept") {
-    setup(cpu);
+    setup(cpu, memory);
     const int i = GENERATE(range(0, 5));
     CAPTURE(kName[i]);
-    cpu.memory[0x0200] = INC_A;
-    IE(cpu) = 0x1F;
-    IF(cpu) = bit(i);
+    memory[0x0200] = INC_A;
+    IE(memory) = 0x1F;
+    IF(memory) = bit(i);
 
     REQUIRE(cpu.step() == 1);
     REQUIRE(cpu.PC == 0x0201);
     REQUIRE(cpu.A() == 0x01);
-    REQUIRE((IF(cpu) & 0x1F) == bit(i));
+    REQUIRE((IF(memory) & 0x1F) == bit(i));
     REQUIRE(cpu.SP == 0xDFF0);
     REQUIRE_FALSE(cpu.ime);
 }
 
 TEST_CASE_METHOD(CPUTest, "No dispatch when the IE bit of the requested interrupt is clear") {
-    setup(cpu);
+    setup(cpu, memory);
     const int i = GENERATE(range(0, 5));
     CAPTURE(kName[i]);
-    cpu.memory[0x0200] = INC_A;
+    memory[0x0200] = INC_A;
     cpu.ime = true;
-    IE(cpu) = static_cast<std::uint8_t>(0x1F & ~bit(i));
-    IF(cpu) = bit(i);
+    IE(memory) = static_cast<std::uint8_t>(0x1F & ~bit(i));
+    IF(memory) = bit(i);
 
     REQUIRE(cpu.step() == 1);
     REQUIRE(cpu.PC == 0x0201);
     REQUIRE(cpu.A() == 0x01);
-    REQUIRE((IF(cpu) & 0x1F) == bit(i));
+    REQUIRE((IF(memory) & 0x1F) == bit(i));
     REQUIRE(cpu.SP == 0xDFF0);
     REQUIRE(cpu.ime);
 }
 
 TEST_CASE_METHOD(CPUTest, "No dispatch when only IF bits 5-7 are set (no interrupt source there)") {
-    setup(cpu);
-    cpu.memory[0x0200] = INC_A;
+    setup(cpu, memory);
+    memory[0x0200] = INC_A;
     cpu.ime = true;
-    IE(cpu) = 0xFF;
-    IF(cpu) = 0xE0;
+    IE(memory) = 0xFF;
+    IF(memory) = 0xE0;
 
     REQUIRE(cpu.step() == 1);
     REQUIRE(cpu.PC == 0x0201);
@@ -193,19 +193,19 @@ TEST_CASE_METHOD(CPUTest, "No dispatch when only IF bits 5-7 are set (no interru
 // ---------------------------------------------------------------------------
 
 TEST_CASE_METHOD(CPUTest, "Priority: lowest pending bit first, then the next after RETI") {
-    setup(cpu);
-    for (auto v : kVector) cpu.memory[v] = RETI;
-    cpu.memory[0x0200] = INC_A;
+    setup(cpu, memory);
+    for (auto v : kVector) memory[v] = RETI;
+    memory[0x0200] = INC_A;
     cpu.ime = true;
-    IE(cpu) = 0x1F;
-    IF(cpu) = 0x1F;
+    IE(memory) = 0x1F;
+    IF(memory) = 0x1F;
 
     for (int i = 0; i < 5; ++i) {
         CAPTURE(kName[i]);
         REQUIRE(cpu.step() == 5);
         REQUIRE(cpu.PC == kVector[i]);
-        REQUIRE(stackWord(cpu, cpu.SP) == 0x0200);
-        REQUIRE((IF(cpu) & 0x1F) == (0x1F & ~((bit(i) << 1) - 1))); // this and all higher-priority bits cleared
+        REQUIRE(stackWord(memory, cpu.SP) == 0x0200);
+        REQUIRE((IF(memory) & 0x1F) == (0x1F & ~((bit(i) << 1) - 1))); // this and all higher-priority bits cleared
         REQUIRE_FALSE(cpu.ime);
         REQUIRE(cpu.step() == 4); // RETI
         REQUIRE(cpu.PC == 0x0200);
@@ -219,25 +219,25 @@ TEST_CASE_METHOD(CPUTest, "Priority: lowest pending bit first, then the next aft
 }
 
 TEST_CASE_METHOD(CPUTest, "Priority: a higher-priority request wins even if a lower one was pending first") {
-    setup(cpu);
+    setup(cpu, memory);
     cpu.ime = true;
-    IE(cpu) = 0x1F;
+    IE(memory) = 0x1F;
     cpu.requestInterrupt(Interrupt::Joypad);
     cpu.requestInterrupt(Interrupt::Timer);
 
     REQUIRE(cpu.step() == 5);
     REQUIRE(cpu.PC == 0x50);
-    REQUIRE((IF(cpu) & 0x1F) == bit(4));
+    REQUIRE((IF(memory) & 0x1F) == bit(4));
 }
 
 TEST_CASE_METHOD(CPUTest, "RETI in a handler returns and re-enables IME; a second pending interrupt is then serviced") {
-    setup(cpu);
-    cpu.memory[0x40] = NOP;
-    cpu.memory[0x41] = RETI;
-    cpu.memory[0x50] = RETI;
-    cpu.memory[0x0200] = INC_A;
+    setup(cpu, memory);
+    memory[0x40] = NOP;
+    memory[0x41] = RETI;
+    memory[0x50] = RETI;
+    memory[0x0200] = INC_A;
     cpu.ime = true;
-    IE(cpu) = 0x1F;
+    IE(memory) = 0x1F;
     cpu.requestInterrupt(Interrupt::VBlank);
 
     REQUIRE(cpu.step() == 5); // VBlank
@@ -246,7 +246,7 @@ TEST_CASE_METHOD(CPUTest, "RETI in a handler returns and re-enables IME; a secon
     cpu.requestInterrupt(Interrupt::Timer); // arrives inside the handler, IME = 0 blocks it
     REQUIRE(cpu.step() == 1); // NOP in handler
     REQUIRE(cpu.PC == 0x41);
-    REQUIRE((IF(cpu) & 0x1F) == bit(2));
+    REQUIRE((IF(memory) & 0x1F) == bit(2));
 
     REQUIRE(cpu.step() == 4); // RETI
     REQUIRE(cpu.PC == 0x0200);
@@ -255,18 +255,18 @@ TEST_CASE_METHOD(CPUTest, "RETI in a handler returns and re-enables IME; a secon
 
     REQUIRE(cpu.step() == 5); // Timer serviced before INC A
     REQUIRE(cpu.PC == 0x50);
-    REQUIRE(stackWord(cpu, cpu.SP) == 0x0200);
+    REQUIRE(stackWord(memory, cpu.SP) == 0x0200);
     REQUIRE(cpu.A() == 0x00);
     REQUIRE_FALSE(cpu.ime);
 }
 
 TEST_CASE_METHOD(CPUTest, "RET (not RETI) in a handler leaves IME off; pending interrupt not serviced") {
-    setup(cpu);
-    cpu.memory[0x40] = RET;
-    cpu.memory[0x0200] = INC_A;
+    setup(cpu, memory);
+    memory[0x40] = RET;
+    memory[0x0200] = INC_A;
     cpu.ime = true;
-    IE(cpu) = 0x1F;
-    IF(cpu) = bit(0) | bit(2);
+    IE(memory) = 0x1F;
+    IF(memory) = bit(0) | bit(2);
 
     REQUIRE(cpu.step() == 5);
     REQUIRE(cpu.PC == 0x40);
@@ -275,7 +275,7 @@ TEST_CASE_METHOD(CPUTest, "RET (not RETI) in a handler leaves IME off; pending i
     REQUIRE_FALSE(cpu.ime);
     REQUIRE(cpu.step() == 1); // INC A, Timer still pending
     REQUIRE(cpu.A() == 0x01);
-    REQUIRE((IF(cpu) & 0x1F) == bit(2));
+    REQUIRE((IF(memory) & 0x1F) == bit(2));
 }
 
 // ---------------------------------------------------------------------------
@@ -283,11 +283,11 @@ TEST_CASE_METHOD(CPUTest, "RET (not RETI) in a handler leaves IME off; pending i
 // ---------------------------------------------------------------------------
 
 TEST_CASE_METHOD(CPUTest, "EI; NOP with an interrupt pending: serviced only after the NOP") {
-    setup(cpu);
-    cpu.memory[0x0200] = EI;
-    cpu.memory[0x0201] = NOP;
-    cpu.memory[0x0202] = INC_A;
-    IE(cpu) = 0x1F;
+    setup(cpu, memory);
+    memory[0x0200] = EI;
+    memory[0x0201] = NOP;
+    memory[0x0202] = INC_A;
+    IE(memory) = 0x1F;
     cpu.requestInterrupt(Interrupt::Serial);
 
     REQUIRE(cpu.step() == 1); // EI
@@ -296,21 +296,21 @@ TEST_CASE_METHOD(CPUTest, "EI; NOP with an interrupt pending: serviced only afte
     REQUIRE(cpu.step() == 1); // NOP still runs
     REQUIRE(cpu.PC == 0x0202);
     REQUIRE(cpu.SP == 0xDFF0);
-    REQUIRE((IF(cpu) & 0x1F) == bit(3));
+    REQUIRE((IF(memory) & 0x1F) == bit(3));
 
     REQUIRE(cpu.step() == 5); // now serviced
     REQUIRE(cpu.PC == 0x58);
-    REQUIRE(stackWord(cpu, cpu.SP) == 0x0202); // points after the NOP
+    REQUIRE(stackWord(memory, cpu.SP) == 0x0202); // points after the NOP
     REQUIRE(cpu.SP == 0xDFEE);
     REQUIRE(cpu.A() == 0x00);
-    REQUIRE((IF(cpu) & 0x1F) == 0x00);
+    REQUIRE((IF(memory) & 0x1F) == 0x00);
 }
 
 TEST_CASE_METHOD(CPUTest, "EI; DI with an interrupt pending: never serviced") {
-    setup(cpu);
-    cpu.memory[0x0200] = EI;
-    cpu.memory[0x0201] = DI;
-    IE(cpu) = 0x1F;
+    setup(cpu, memory);
+    memory[0x0200] = EI;
+    memory[0x0201] = DI;
+    IE(memory) = 0x1F;
     cpu.requestInterrupt(Interrupt::VBlank);
 
     for (int s = 0; s < 6; ++s) {
@@ -320,7 +320,7 @@ TEST_CASE_METHOD(CPUTest, "EI; DI with an interrupt pending: never serviced") {
         REQUIRE(cpu.SP == 0xDFF0);
         REQUIRE_FALSE(cpu.ime);
     }
-    REQUIRE((IF(cpu) & 0x1F) == bit(0));
+    REQUIRE((IF(memory) & 0x1F) == bit(0));
 }
 
 // ---------------------------------------------------------------------------
@@ -328,12 +328,12 @@ TEST_CASE_METHOD(CPUTest, "EI; DI with an interrupt pending: never serviced") {
 // ---------------------------------------------------------------------------
 
 TEST_CASE_METHOD(CPUTest, "HALT with IME=1: stays halted until requested, then services and returns after HALT") {
-    setup(cpu);
-    cpu.memory[0x0200] = HALT;
-    cpu.memory[0x0201] = INC_A;
-    cpu.memory[0x50] = RETI;
+    setup(cpu, memory);
+    memory[0x0200] = HALT;
+    memory[0x0201] = INC_A;
+    memory[0x50] = RETI;
     cpu.ime = true;
-    IE(cpu) = bit(2);
+    IE(memory) = bit(2);
 
     cpu.step(); // HALT
     REQUIRE(cpu.halted);
@@ -358,8 +358,8 @@ TEST_CASE_METHOD(CPUTest, "HALT with IME=1: stays halted until requested, then s
     REQUIRE_FALSE(cpu.halted);
     REQUIRE(cpu.A() == 0x00); // handler before the instruction after HALT
     REQUIRE(cpu.SP == 0xDFEE);
-    REQUIRE(stackWord(cpu, cpu.SP) == 0x0201);
-    REQUIRE((IF(cpu) & 0x1F) == bit(4)); // Timer cleared, Joypad kept
+    REQUIRE(stackWord(memory, cpu.SP) == 0x0201);
+    REQUIRE((IF(memory) & 0x1F) == bit(4)); // Timer cleared, Joypad kept
     REQUIRE_FALSE(cpu.ime);
 
     REQUIRE(cpu.step() == 4); // RETI
@@ -370,21 +370,21 @@ TEST_CASE_METHOD(CPUTest, "HALT with IME=1: stays halted until requested, then s
 }
 
 TEST_CASE_METHOD(CPUTest, "HALT with IME=1: interrupt pending before HALT is serviced first; HALT then halts normally (no halt bug)") {
-    setup(cpu);
-    cpu.memory[0x0200] = HALT;
-    cpu.memory[0x0201] = INC_A;
-    cpu.memory[0x0202] = NOP;
-    cpu.memory[0x40] = RETI;
+    setup(cpu, memory);
+    memory[0x0200] = HALT;
+    memory[0x0201] = INC_A;
+    memory[0x0202] = NOP;
+    memory[0x40] = RETI;
     cpu.ime = true;
-    IE(cpu) = 0x1F;
-    IF(cpu) = 0x00;
+    IE(memory) = 0x1F;
+    IF(memory) = 0x00;
 
     // With IME=1 a pending interrupt is dispatched before HALT is even fetched,
     // so HALT is never bugged; it is reached via the handler's RETI and halts normally.
     cpu.requestInterrupt(Interrupt::VBlank);
     REQUIRE(cpu.step() == 5); // serviced before HALT even runs
     REQUIRE(cpu.PC == 0x40);
-    REQUIRE(stackWord(cpu, cpu.SP) == 0x0200);
+    REQUIRE(stackWord(memory, cpu.SP) == 0x0200);
     REQUIRE(cpu.step() == 4); // RETI -> HALT
     REQUIRE(cpu.PC == 0x0200);
 
@@ -392,7 +392,7 @@ TEST_CASE_METHOD(CPUTest, "HALT with IME=1: interrupt pending before HALT is ser
     REQUIRE(cpu.halted);
     cpu.requestInterrupt(Interrupt::VBlank);
     REQUIRE(stepUntil(cpu, [&] { return cpu.PC == 0x40; }, 3));
-    REQUIRE(stackWord(cpu, cpu.SP) == 0x0201);
+    REQUIRE(stackWord(memory, cpu.SP) == 0x0201);
     REQUIRE(cpu.step() == 4); // RETI
     REQUIRE(cpu.step() == 1); // INC A runs once only
     REQUIRE(cpu.A() == 0x01);
@@ -404,13 +404,13 @@ TEST_CASE_METHOD(CPUTest, "HALT with IME=1: interrupt pending before HALT is ser
 // ---------------------------------------------------------------------------
 
 TEST_CASE_METHOD(CPUTest, "HALT with IME=0: stays halted, then resumes after HALT without servicing") {
-    setup(cpu);
+    setup(cpu, memory);
     const int i = GENERATE(range(0, 5));
     CAPTURE(kName[i]);
-    cpu.memory[0x0200] = HALT;
-    cpu.memory[0x0201] = INC_A;
-    cpu.memory[0x0202] = NOP;
-    IE(cpu) = bit(i);
+    memory[0x0200] = HALT;
+    memory[0x0201] = INC_A;
+    memory[0x0202] = NOP;
+    IE(memory) = bit(i);
 
     cpu.step(); // HALT
     REQUIRE(cpu.halted);
@@ -430,9 +430,9 @@ TEST_CASE_METHOD(CPUTest, "HALT with IME=0: stays halted, then resumes after HAL
     REQUIRE(cpu.A() == 0x01); // INC A ran exactly once
     REQUIRE(cpu.PC == 0x0202);
     REQUIRE(cpu.SP == 0xDFF0); // nothing pushed
-    REQUIRE(cpu.memory[0xDFEE] == 0x00);
-    REQUIRE(cpu.memory[0xDFEF] == 0x00);
-    REQUIRE((IF(cpu) & 0x1F) == bit(i)); // not acknowledged
+    REQUIRE(memory[0xDFEE] == 0x00);
+    REQUIRE(memory[0xDFEF] == 0x00);
+    REQUIRE((IF(memory) & 0x1F) == bit(i)); // not acknowledged
     REQUIRE_FALSE(cpu.ime);
 }
 
@@ -441,11 +441,11 @@ TEST_CASE_METHOD(CPUTest, "HALT with IME=0: stays halted, then resumes after HAL
 // ---------------------------------------------------------------------------
 
 TEST_CASE_METHOD(CPUTest, "HALT bug: HALT; INC A runs INC A twice") {
-    setup(cpu);
-    cpu.memory[0x0200] = HALT;
-    cpu.memory[0x0201] = INC_A;
-    cpu.memory[0x0202] = NOP;
-    IE(cpu) = 0x1F;
+    setup(cpu, memory);
+    memory[0x0200] = HALT;
+    memory[0x0201] = INC_A;
+    memory[0x0202] = NOP;
+    IE(memory) = 0x1F;
     cpu.requestInterrupt(Interrupt::Timer);
 
     cpu.step(); // HALT exits immediately
@@ -460,16 +460,16 @@ TEST_CASE_METHOD(CPUTest, "HALT bug: HALT; INC A runs INC A twice") {
     REQUIRE(cpu.A() == 0x02);
     REQUIRE(cpu.PC == 0x0203);
     REQUIRE(cpu.SP == 0xDFF0);
-    REQUIRE((IF(cpu) & 0x1F) == bit(2));
+    REQUIRE((IF(memory) & 0x1F) == bit(2));
 }
 
 TEST_CASE_METHOD(CPUTest, "HALT bug: HALT; LD A,d8 loads 0x3E, then runs the d8 byte as an opcode") {
-    setup(cpu);
-    cpu.memory[0x0200] = HALT;
-    cpu.memory[0x0201] = LD_A_D8;
-    cpu.memory[0x0202] = INC_B;
-    cpu.memory[0x0203] = NOP;
-    IE(cpu) = 0x1F;
+    setup(cpu, memory);
+    memory[0x0200] = HALT;
+    memory[0x0201] = LD_A_D8;
+    memory[0x0202] = INC_B;
+    memory[0x0203] = NOP;
+    IE(memory) = 0x1F;
     cpu.requestInterrupt(Interrupt::VBlank);
 
     cpu.step(); // HALT
@@ -483,12 +483,12 @@ TEST_CASE_METHOD(CPUTest, "HALT bug: HALT; LD A,d8 loads 0x3E, then runs the d8 
 }
 
 TEST_CASE_METHOD(CPUTest, "HALT bug: only the next byte is repeated, not every later one") {
-    setup(cpu);
-    cpu.memory[0x0200] = HALT;
-    cpu.memory[0x0201] = INC_A;
-    cpu.memory[0x0202] = INC_B;
-    cpu.memory[0x0203] = NOP;
-    IE(cpu) = 0x1F;
+    setup(cpu, memory);
+    memory[0x0200] = HALT;
+    memory[0x0201] = INC_A;
+    memory[0x0202] = INC_B;
+    memory[0x0203] = NOP;
+    IE(memory) = 0x1F;
     cpu.requestInterrupt(Interrupt::Serial);
 
     for (int s = 0; s < 4; ++s) cpu.step(); // HALT, INC A, INC A, INC B
@@ -498,13 +498,13 @@ TEST_CASE_METHOD(CPUTest, "HALT bug: only the next byte is repeated, not every l
 }
 
 TEST_CASE_METHOD(CPUTest, "HALT bug: EI right before HALT -> serviced, handler RETI returns to the HALT, which halts again") {
-    setup(cpu);
-    cpu.memory[0x0200] = EI;
-    cpu.memory[0x0201] = HALT;
-    cpu.memory[0x0202] = INC_A;
-    cpu.memory[0x0203] = NOP;
-    cpu.memory[0x40] = RETI;
-    IE(cpu) = 0x1F;
+    setup(cpu, memory);
+    memory[0x0200] = EI;
+    memory[0x0201] = HALT;
+    memory[0x0202] = INC_A;
+    memory[0x0203] = NOP;
+    memory[0x40] = RETI;
+    IE(memory) = 0x1F;
     cpu.requestInterrupt(Interrupt::VBlank);
 
     REQUIRE(cpu.step() == 1); // EI
@@ -512,7 +512,7 @@ TEST_CASE_METHOD(CPUTest, "HALT bug: EI right before HALT -> serviced, handler R
     REQUIRE(cpu.step() == 5); // interrupt serviced
     REQUIRE(cpu.PC == 0x40);
     REQUIRE(cpu.SP == 0xDFEE);
-    REQUIRE(stackWord(cpu, cpu.SP) == 0x0201); // return address is the HALT itself
+    REQUIRE(stackWord(memory, cpu.SP) == 0x0201); // return address is the HALT itself
     REQUIRE(cpu.A() == 0x00);
 
     REQUIRE(cpu.step() == 4); // RETI
@@ -531,7 +531,7 @@ TEST_CASE_METHOD(CPUTest, "HALT bug: EI right before HALT -> serviced, handler R
 
     cpu.requestInterrupt(Interrupt::VBlank);
     REQUIRE(stepUntil(cpu, [&] { return cpu.PC == 0x40; }, 3));
-    REQUIRE(stackWord(cpu, cpu.SP) == 0x0202);
+    REQUIRE(stackWord(memory, cpu.SP) == 0x0202);
     REQUIRE(cpu.step() == 4); // RETI
     REQUIRE(cpu.step() == 1); // INC A, once
     REQUIRE(cpu.A() == 0x01);
@@ -539,11 +539,11 @@ TEST_CASE_METHOD(CPUTest, "HALT bug: EI right before HALT -> serviced, handler R
 }
 
 TEST_CASE_METHOD(CPUTest, "HALT bug: RST right after HALT pushes the address of the RST itself") {
-    setup(cpu);
-    cpu.memory[0x0200] = HALT;
-    cpu.memory[0x0201] = RST_08;
-    cpu.memory[0x0008] = RET;
-    IE(cpu) = 0x1F;
+    setup(cpu, memory);
+    memory[0x0200] = HALT;
+    memory[0x0201] = RST_08;
+    memory[0x0008] = RET;
+    IE(memory) = 0x1F;
     cpu.requestInterrupt(Interrupt::Stat);
 
     cpu.step(); // HALT (bugged)
@@ -551,7 +551,7 @@ TEST_CASE_METHOD(CPUTest, "HALT bug: RST right after HALT pushes the address of 
     REQUIRE(cpu.step() == 4); // RST 08
     REQUIRE(cpu.PC == 0x0008);
     REQUIRE(cpu.SP == 0xDFEE);
-    REQUIRE(stackWord(cpu, cpu.SP) == 0x0201); // points at the RST
+    REQUIRE(stackWord(memory, cpu.SP) == 0x0201); // points at the RST
 
     REQUIRE(cpu.step() == 4); // RET
     REQUIRE(cpu.PC == 0x0201);
@@ -559,6 +559,6 @@ TEST_CASE_METHOD(CPUTest, "HALT bug: RST right after HALT pushes the address of 
 
     REQUIRE(cpu.step() == 4); // RST 08 again, now normal
     REQUIRE(cpu.PC == 0x0008);
-    REQUIRE(stackWord(cpu, cpu.SP) == 0x0202);
-    REQUIRE((IF(cpu) & 0x1F) == bit(1)); // never serviced, IME = 0
+    REQUIRE(stackWord(memory, cpu.SP) == 0x0202);
+    REQUIRE((IF(memory) & 0x1F) == bit(1)); // never serviced, IME = 0
 }

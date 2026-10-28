@@ -33,7 +33,7 @@ void setHigh(std::uint16_t &pair, std::uint8_t v) { pair = static_cast<std::uint
 void setLow(std::uint16_t &pair, std::uint8_t v) { pair = static_cast<std::uint16_t>((pair & 0xFF00) | v); }
 void setA(CPU &cpu, std::uint8_t v) { setHigh(cpu.AF, v); }
 
-void setReg(CPU &cpu, int idx, std::uint8_t v) {
+void setReg(CPU &cpu, FlatMemory &memory, int idx, std::uint8_t v) {
     switch (idx) {
         case 0: setHigh(cpu.BC, v); break;
         case 1: setLow(cpu.BC, v); break;
@@ -42,11 +42,11 @@ void setReg(CPU &cpu, int idx, std::uint8_t v) {
         case 4: setHigh(cpu.HL, v); break;
         case 5: setLow(cpu.HL, v); break;
         case 7: setHigh(cpu.AF, v); break;
-        default: cpu.memory[cpu.HL] = v; break;
+        default: memory[cpu.HL] = v; break;
     }
 }
 
-std::uint8_t getReg(const CPU &cpu, int idx) {
+std::uint8_t getReg(const CPU &cpu, const FlatMemory &memory, int idx) {
     switch (idx) {
         case 0: return cpu.B();
         case 1: return cpu.C();
@@ -55,19 +55,19 @@ std::uint8_t getReg(const CPU &cpu, int idx) {
         case 4: return cpu.H();
         case 5: return cpu.L();
         case 7: return cpu.A();
-        default: return cpu.memory[cpu.HL];
+        default: return memory[cpu.HL];
     }
 }
 
 // Distinct value in every register, (HL) byte seeded; F given by `flags`
-void seedRegisters(CPU &cpu, std::uint8_t flags) {
+void seedRegisters(CPU &cpu, FlatMemory &memory, std::uint8_t flags) {
     cpu.AF = static_cast<std::uint16_t>(0xA100 | flags);
     cpu.BC = 0xB2C3;
     cpu.DE = 0xD4E5;
     cpu.HL = kHL;
     cpu.SP = 0xDFF0;
     cpu.PC = 0x0200;
-    cpu.memory[kHL] = 0x99;
+    memory[kHL] = 0x99;
 }
 
 std::uint16_t cbOp(int x, int y, int r) { return static_cast<std::uint16_t>(0xCB00 | (x << 6) | (y << 3) | r); }
@@ -94,13 +94,13 @@ ShiftResult refShift(int op, std::uint8_t v, bool cin) {
 }
 
 // Every register except `idx` (and F) unchanged; for idx 4/5 HL itself changes, so it is skipped
-void requireOthersUnchanged(const CPU &cpu, const CPU &expected, int idx) {
+void requireOthersUnchanged(const CPU &cpu, const FlatMemory &memory, const CPU &expected, const FlatMemory &expectedMemory, int idx) {
     for (int r = 0; r < 8; ++r) {
         if (r == idx || r == 6) continue;
         CAPTURE(regName[r]);
-        REQUIRE(getReg(cpu, r) == getReg(expected, r));
+        REQUIRE(getReg(cpu, memory, r) == getReg(expected, expectedMemory, r));
     }
-    if (idx != 6 && idx != 4 && idx != 5) REQUIRE(cpu.memory[kHL] == expected.memory[kHL]);
+    if (idx != 6 && idx != 4 && idx != 5) REQUIRE(memory[kHL] == expectedMemory[kHL]);
     REQUIRE(cpu.SP == expected.SP);
 }
 
@@ -121,19 +121,20 @@ TEST_CASE_METHOD(CPUTest, "0xCB00-0xCB3F:(shift/rotate r) result and flags Z 0 0
     const bool cin = (initialF & C) != 0;
     CAPTURE(opcode, shiftName[op], regName[r], v, initialF);
 
-    seedRegisters(cpu, initialF);
-    setReg(cpu, r, v);
+    seedRegisters(cpu, memory, initialF);
+    setReg(cpu, memory, r, v);
     CPU expected = cpu;
+    const FlatMemory expectedMemory = memory;
     const ShiftResult res = refShift(op, v, cin);
     const std::uint8_t expectedF = static_cast<std::uint8_t>((res.value == 0 ? Z : 0) | (res.carry ? C : 0));
 
     const int cycles = cpu.executeOpcode(opcode);
 
-    REQUIRE(getReg(cpu, r) == res.value);
+    REQUIRE(getReg(cpu, memory, r) == res.value);
     REQUIRE(cpu.F() == expectedF);
     REQUIRE(cpu.PC == 0x0202);
     REQUIRE(cycles == (r == 6 ? 4 : 2));
-    requireOthersUnchanged(cpu, expected, r);
+    requireOthersUnchanged(cpu, memory, expected, expectedMemory, r);
 }
 
 namespace {
@@ -191,12 +192,12 @@ TEST_CASE_METHOD(CPUTest, "0xCB00-0xCB3F:(shift/rotate) hand-checked vectors inc
     const std::uint16_t opcode = cbOp(0, tc.op, r);
     CAPTURE(opcode, shiftName[tc.op], regName[r], tc.in, tc.cin, noise);
 
-    seedRegisters(cpu, static_cast<std::uint8_t>(noise | (tc.cin ? C : 0)));
-    setReg(cpu, r, tc.in);
+    seedRegisters(cpu, memory, static_cast<std::uint8_t>(noise | (tc.cin ? C : 0)));
+    setReg(cpu, memory, r, tc.in);
 
     const int cycles = cpu.executeOpcode(opcode);
 
-    REQUIRE(getReg(cpu, r) == tc.out);
+    REQUIRE(getReg(cpu, memory, r) == tc.out);
     REQUIRE(cpu.F() == tc.flags);
     REQUIRE(cpu.PC == 0x0202);
     REQUIRE(cycles == (r == 6 ? 4 : 2));
@@ -217,17 +218,18 @@ TEST_CASE_METHOD(CPUTest, "0xCB40-0xCB7F:(BIT b, r) Z = !bit, N=0, H=1, C unchan
     const std::uint16_t opcode = cbOp(1, b, r);
     CAPTURE(opcode, b, regName[r], v, initialF);
 
-    seedRegisters(cpu, initialF);
-    setReg(cpu, r, v);
+    seedRegisters(cpu, memory, initialF);
+    setReg(cpu, memory, r, v);
     CPU expected = cpu;
+    const FlatMemory expectedMemory = memory;
     const std::uint8_t expectedF =
         static_cast<std::uint8_t>(((v & mask) == 0 ? Z : 0) | H | (initialF & C));
 
     const int cycles = cpu.executeOpcode(opcode);
 
     REQUIRE(cpu.F() == expectedF);
-    REQUIRE(getReg(cpu, r) == v);
-    REQUIRE(cpu.memory[kHL] == expected.memory[kHL]);
+    REQUIRE(getReg(cpu, memory, r) == v);
+    REQUIRE(memory[kHL] == expectedMemory[kHL]);
     REQUIRE(cpu.A() == expected.A());
     REQUIRE(cpu.BC == expected.BC);
     REQUIRE(cpu.DE == expected.DE);
@@ -252,18 +254,19 @@ TEST_CASE_METHOD(CPUTest, "0xCB80-0xCBFF:(RES/SET b, r) only the target bit chan
     const std::uint8_t result = (x == 2) ? static_cast<std::uint8_t>(v & ~mask) : static_cast<std::uint8_t>(v | mask);
     CAPTURE(opcode, (x == 2 ? "RES" : "SET"), b, regName[r], v, initialF);
 
-    seedRegisters(cpu, initialF);
-    setReg(cpu, r, v);
+    seedRegisters(cpu, memory, initialF);
+    setReg(cpu, memory, r, v);
     CPU expected = cpu;
+    const FlatMemory expectedMemory = memory;
 
     const int cycles = cpu.executeOpcode(opcode);
 
-    REQUIRE(getReg(cpu, r) == result);
-    if (r == 6) { REQUIRE(cpu.memory[kHL] == result); }
+    REQUIRE(getReg(cpu, memory, r) == result);
+    if (r == 6) { REQUIRE(memory[kHL] == result); }
     REQUIRE(cpu.F() == initialF);
     REQUIRE(cpu.PC == 0x0202);
     REQUIRE(cycles == (r == 6 ? 4 : 2));
-    requireOthersUnchanged(cpu, expected, r);
+    requireOthersUnchanged(cpu, memory, expected, expectedMemory, r);
 }
 
 // ---------------------------------------------------------------------------
@@ -278,7 +281,7 @@ TEST_CASE_METHOD(CPUTest, "0xCB00-0xCBFF:(all CB) PC +2; 2 cycles for r, (HL): B
     const int expectedCycles = !isHL ? 2 : (isBit ? 3 : 4);
     CAPTURE(opcode, expectedCycles);
 
-    seedRegisters(cpu, 0x00);
+    seedRegisters(cpu, memory, 0x00);
 
     const int cycles = cpu.executeOpcode(opcode);
 
@@ -292,11 +295,11 @@ TEST_CASE_METHOD(CPUTest, "0xCB00-0xCBFF:(all CB) PC +2; 2 cycles for r, (HL): B
 // ---------------------------------------------------------------------------
 
 TEST_CASE_METHOD(CPUTest, "0xCB37:(SWAP A) via step reads the CB prefix, PC +2, 2 cycles") {
-    seedRegisters(cpu, 0xF0);
+    seedRegisters(cpu, memory, 0xF0);
     setA(cpu, 0x3C);
-    cpu.memory[0x0200] = 0xCB;
-    cpu.memory[0x0201] = 0x37;
-    cpu.memory[0x0202] = 0x00;
+    memory[0x0200] = 0xCB;
+    memory[0x0201] = 0x37;
+    memory[0x0202] = 0x00;
 
     REQUIRE(cpu.step() == 2);
     REQUIRE(cpu.A() == 0xC3);
@@ -305,13 +308,13 @@ TEST_CASE_METHOD(CPUTest, "0xCB37:(SWAP A) via step reads the CB prefix, PC +2, 
 }
 
 TEST_CASE_METHOD(CPUTest, "0xCB11/0xCB7E/0xCBDE:(RL C, BIT 7,(HL), SET 3,(HL)) sequence via step") {
-    seedRegisters(cpu, C);
+    seedRegisters(cpu, memory, C);
     setLow(cpu.BC, 0x80);
-    cpu.memory[kHL] = 0x00;
-    cpu.memory[0x0200] = 0xCB; cpu.memory[0x0201] = 0x11; // RL C
-    cpu.memory[0x0202] = 0xCB; cpu.memory[0x0203] = 0x7E; // BIT 7, (HL)
-    cpu.memory[0x0204] = 0xCB; cpu.memory[0x0205] = 0xDE; // SET 3, (HL)
-    cpu.memory[0x0206] = 0xCB; cpu.memory[0x0207] = 0x5E; // BIT 3, (HL)
+    memory[kHL] = 0x00;
+    memory[0x0200] = 0xCB; memory[0x0201] = 0x11; // RL C
+    memory[0x0202] = 0xCB; memory[0x0203] = 0x7E; // BIT 7, (HL)
+    memory[0x0204] = 0xCB; memory[0x0205] = 0xDE; // SET 3, (HL)
+    memory[0x0206] = 0xCB; memory[0x0207] = 0x5E; // BIT 3, (HL)
 
     REQUIRE(cpu.step() == 2);
     REQUIRE(cpu.C() == 0x01);
@@ -320,11 +323,11 @@ TEST_CASE_METHOD(CPUTest, "0xCB11/0xCB7E/0xCBDE:(RL C, BIT 7,(HL), SET 3,(HL)) s
 
     REQUIRE(cpu.step() == 3);
     REQUIRE(cpu.F() == (Z | H | C));
-    REQUIRE(cpu.memory[kHL] == 0x00);
+    REQUIRE(memory[kHL] == 0x00);
     REQUIRE(cpu.PC == 0x0204);
 
     REQUIRE(cpu.step() == 4);
-    REQUIRE(cpu.memory[kHL] == 0x08);
+    REQUIRE(memory[kHL] == 0x08);
     REQUIRE(cpu.F() == (Z | H | C));
     REQUIRE(cpu.PC == 0x0206);
 
@@ -351,7 +354,7 @@ TEST_CASE_METHOD(CPUTest, "0x07/0x0F/0x17/0x1F:(RLCA/RRCA/RLA/RRA) Z=0 even when
     }));
     CAPTURE(op, in, cin);
 
-    seedRegisters(cpu, static_cast<std::uint8_t>(Z | N | H | (cin ? C : 0)));
+    seedRegisters(cpu, memory, static_cast<std::uint8_t>(Z | N | H | (cin ? C : 0)));
     setA(cpu, in);
 
     const int cycles = cpu.executeOpcode(op);

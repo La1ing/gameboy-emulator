@@ -27,7 +27,7 @@ enum AluOp : int { ADD = 0, ADC, SUB, SBC, AND, XOR, OR, CP };
 void setHigh(std::uint16_t &pair, std::uint8_t v) { pair = static_cast<std::uint16_t>((pair & 0x00FF) | (v << 8)); }
 void setLow(std::uint16_t &pair, std::uint8_t v) { pair = static_cast<std::uint16_t>((pair & 0xFF00) | v); }
 
-void setReg(CPU &cpu, int idx, std::uint8_t v) {
+void setReg(CPU &cpu, FlatMemory &memory, int idx, std::uint8_t v) {
     switch (idx) {
         case 0: setHigh(cpu.BC, v); break;
         case 1: setLow(cpu.BC, v); break;
@@ -36,7 +36,7 @@ void setReg(CPU &cpu, int idx, std::uint8_t v) {
         case 4: setHigh(cpu.HL, v); break;
         case 5: setLow(cpu.HL, v); break;
         case 7: setHigh(cpu.AF, v); break;
-        default: cpu.memory[cpu.HL] = v; break;
+        default: memory[cpu.HL] = v; break;
     }
 }
 
@@ -199,9 +199,10 @@ TEST_CASE_METHOD(CPUTest, "0x80-0xBF:(ALU A, r) result, flags, PC +1, cycles for
     seedRegisters(cpu);
     setA(cpu, tc.a);
     setF(cpu, initialFlags(noise, tc.carryIn));
-    setReg(cpu, src, tc.b);
+    setReg(cpu, memory, src, tc.b);
 
     CPU expected = cpu;
+    const FlatMemory expectedMemory = memory;
     const std::uint16_t hl = cpu.HL;
 
     const int cycles = cpu.executeOpcode(op);
@@ -212,7 +213,7 @@ TEST_CASE_METHOD(CPUTest, "0x80-0xBF:(ALU A, r) result, flags, PC +1, cycles for
     REQUIRE(cpu.DE == expected.DE);
     REQUIRE(cpu.HL == expected.HL);
     REQUIRE(cpu.SP == expected.SP);
-    REQUIRE(cpu.memory[hl] == expected.memory[hl]);
+    REQUIRE(memory[hl] == expectedMemory[hl]);
     REQUIRE(cpu.PC == 0x0201);
     REQUIRE(cycles == (src == 6 ? 2 : 1));
 }
@@ -249,8 +250,8 @@ TEST_CASE_METHOD(CPUTest, "0xC6-0xFE:(ALU A, d8) operand at PC+1, result, flags,
     seedRegisters(cpu);
     setA(cpu, tc.a);
     setF(cpu, initialFlags(noise, tc.carryIn));
-    cpu.memory[0x0201] = tc.b;
-    cpu.memory[cpu.HL] = static_cast<std::uint8_t>(~tc.b); // must not be used
+    memory[0x0201] = tc.b;
+    memory[cpu.HL] = static_cast<std::uint8_t>(~tc.b); // must not be used
     CPU expected = cpu;
 
     const int cycles = cpu.executeOpcode(op);
@@ -261,7 +262,7 @@ TEST_CASE_METHOD(CPUTest, "0xC6-0xFE:(ALU A, d8) operand at PC+1, result, flags,
     REQUIRE(cpu.DE == expected.DE);
     REQUIRE(cpu.HL == expected.HL);
     REQUIRE(cpu.SP == expected.SP);
-    REQUIRE(cpu.memory[0x0201] == tc.b);
+    REQUIRE(memory[0x0201] == tc.b);
     REQUIRE(cpu.PC == 0x0202);
     REQUIRE(cycles == 2);
 }
@@ -270,7 +271,7 @@ TEST_CASE_METHOD(CPUTest, "0xC6:(ADD A, d8) operand read wraps at PC = 0xFFFF") 
     cpu.PC = 0xFFFF;
     setA(cpu, 0x01);
     setF(cpu, 0);
-    cpu.memory[0x0000] = 0x02;
+    memory[0x0000] = 0x02;
 
     const int cycles = cpu.executeOpcode(0xC6);
 
@@ -355,7 +356,7 @@ TEST_CASE_METHOD(CPUTest, "0x27:(DAA) after ADD/ADC/SUB/SBC sequences") {
     seedRegisters(cpu);
     setA(cpu, tc.a);
     setF(cpu, tc.carryIn ? C : 0);
-    cpu.memory[0x0201] = tc.b;
+    memory[0x0201] = tc.b;
 
     REQUIRE(cpu.executeOpcode(immOpcode(tc.op)) == 2);
     REQUIRE(cpu.PC == 0x0202);

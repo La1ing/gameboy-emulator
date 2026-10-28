@@ -47,9 +47,9 @@ void seedRegisters(CPU &cpu, std::uint8_t flags) {
     cpu.PC = 0x0200;
 }
 
-void write16(CPU &cpu, std::uint16_t addr, std::uint16_t v) {
-    cpu.memory[addr] = lowByte(v);
-    cpu.memory[static_cast<std::uint16_t>(addr + 1)] = highByte(v);
+void write16(FlatMemory &memory, std::uint16_t addr, std::uint16_t v) {
+    memory[addr] = lowByte(v);
+    memory[static_cast<std::uint16_t>(addr + 1)] = highByte(v);
 }
 
 std::uint16_t &pairRef(CPU &cpu, int p) {
@@ -93,7 +93,7 @@ TEST_CASE_METHOD(CPUTest, "0xC3:(JP a16) jumps to little-endian a16, 4 cycles, f
                                           std::uint16_t{0x0200});
     CAPTURE(flags, target);
     seedRegisters(cpu, flags);
-    write16(cpu, 0x0201, target);
+    write16(memory, 0x0201, target);
     CPU expected = cpu;
 
     const int cycles = cpu.executeOpcode(0xC3);
@@ -112,7 +112,7 @@ TEST_CASE_METHOD(CPUTest, "0xC2-0xDA:(JP cc, a16) taken -> target, 4 cycles; not
     CAPTURE(op, ccName[cc], flags, taken);
 
     seedRegisters(cpu, flags);
-    write16(cpu, 0x0201, 0x4321);
+    write16(memory, 0x0201, 0x4321);
     CPU expected = cpu;
 
     const int cycles = cpu.executeOpcode(op);
@@ -129,8 +129,8 @@ TEST_CASE_METHOD(CPUTest, "0xE9:(JP HL) PC = HL, 1 cycle, flags unchanged") {
     CAPTURE(flags, hl);
     seedRegisters(cpu, flags);
     cpu.HL = hl;
-    write16(cpu, hl, 0x9999); // memory at HL must not be used as a target
-    write16(cpu, 0x0201, 0x8888);
+    write16(memory, hl, 0x9999); // memory at HL must not be used as a target
+    write16(memory, 0x0201, 0x8888);
     CPU expected = cpu;
 
     const int cycles = cpu.executeOpcode(0xE9);
@@ -150,16 +150,17 @@ TEST_CASE_METHOD(CPUTest, "0xCD:(CALL a16) pushes PC+3 (low at SP, high at SP+1)
     CAPTURE(flags);
     seedRegisters(cpu, flags);
     cpu.PC = 0x12FE; // return address 0x1301: distinct bytes
-    write16(cpu, 0x12FF, 0x5678);
+    write16(memory, 0x12FF, 0x5678);
     CPU expected = cpu;
+    const FlatMemory expectedMemory = memory;
 
     const int cycles = cpu.executeOpcode(0xCD);
 
     REQUIRE(cpu.PC == 0x5678);
     REQUIRE(cpu.SP == 0xDFEE);
-    REQUIRE(cpu.memory[0xDFEE] == 0x01);
-    REQUIRE(cpu.memory[0xDFEF] == 0x13);
-    REQUIRE(cpu.memory[0xDFF0] == expected.memory[0xDFF0]);
+    REQUIRE(memory[0xDFEE] == 0x01);
+    REQUIRE(memory[0xDFEF] == 0x13);
+    REQUIRE(memory[0xDFF0] == expectedMemory[0xDFF0]);
     requireRegsUnchanged(cpu, expected);
     REQUIRE(cycles == 6);
 }
@@ -167,13 +168,13 @@ TEST_CASE_METHOD(CPUTest, "0xCD:(CALL a16) pushes PC+3 (low at SP, high at SP+1)
 TEST_CASE_METHOD(CPUTest, "0xCD:(CALL a16) SP wraps below 0x0000") {
     seedRegisters(cpu, 0);
     cpu.SP = 0x0001;
-    write16(cpu, 0x0201, 0x3000);
+    write16(memory, 0x0201, 0x3000);
 
     const int cycles = cpu.executeOpcode(0xCD);
 
     REQUIRE(cpu.SP == 0xFFFF);
-    REQUIRE(cpu.memory[0xFFFF] == 0x03); // low byte of 0x0203
-    REQUIRE(cpu.memory[0x0000] == 0x02); // high byte
+    REQUIRE(memory[0xFFFF] == 0x03); // low byte of 0x0203
+    REQUIRE(memory[0x0000] == 0x02); // high byte
     REQUIRE(cpu.PC == 0x3000);
     REQUIRE(cycles == 6);
 }
@@ -186,9 +187,9 @@ TEST_CASE_METHOD(CPUTest, "0xC4-0xDC:(CALL cc, a16) taken pushes/jumps, 6 cycles
     CAPTURE(op, ccName[cc], flags, taken);
 
     seedRegisters(cpu, flags);
-    write16(cpu, 0x0201, 0x4321);
-    cpu.memory[0xDFEE] = 0xEE;
-    cpu.memory[0xDFEF] = 0xEF;
+    write16(memory, 0x0201, 0x4321);
+    memory[0xDFEE] = 0xEE;
+    memory[0xDFEF] = 0xEF;
     CPU expected = cpu;
 
     const int cycles = cpu.executeOpcode(op);
@@ -196,14 +197,14 @@ TEST_CASE_METHOD(CPUTest, "0xC4-0xDC:(CALL cc, a16) taken pushes/jumps, 6 cycles
     if (taken) {
         REQUIRE(cpu.PC == 0x4321);
         REQUIRE(cpu.SP == 0xDFEE);
-        REQUIRE(cpu.memory[0xDFEE] == 0x03);
-        REQUIRE(cpu.memory[0xDFEF] == 0x02);
+        REQUIRE(memory[0xDFEE] == 0x03);
+        REQUIRE(memory[0xDFEF] == 0x02);
         REQUIRE(cycles == 6);
     } else {
         REQUIRE(cpu.PC == 0x0203);
         REQUIRE(cpu.SP == 0xDFF0);
-        REQUIRE(cpu.memory[0xDFEE] == 0xEE);
-        REQUIRE(cpu.memory[0xDFEF] == 0xEF);
+        REQUIRE(memory[0xDFEE] == 0xEE);
+        REQUIRE(memory[0xDFEF] == 0xEF);
         REQUIRE(cycles == 3);
     }
     requireRegsUnchanged(cpu, expected);
@@ -214,8 +215,8 @@ TEST_CASE_METHOD(CPUTest, "0xC9:(RET) pops PC (low from SP, high from SP+1), SP 
     CAPTURE(flags);
     seedRegisters(cpu, flags);
     cpu.SP = 0xDFEE;
-    cpu.memory[0xDFEE] = 0x34;
-    cpu.memory[0xDFEF] = 0x12;
+    memory[0xDFEE] = 0x34;
+    memory[0xDFEF] = 0x12;
     CPU expected = cpu;
 
     const int cycles = cpu.executeOpcode(0xC9);
@@ -230,8 +231,8 @@ TEST_CASE_METHOD(CPUTest, "0xC9:(RET) pops PC (low from SP, high from SP+1), SP 
 TEST_CASE_METHOD(CPUTest, "0xC9:(RET) SP wraps past 0xFFFF") {
     seedRegisters(cpu, 0);
     cpu.SP = 0xFFFF;
-    cpu.memory[0xFFFF] = 0x78;
-    cpu.memory[0x0000] = 0x56;
+    memory[0xFFFF] = 0x78;
+    memory[0x0000] = 0x56;
 
     const int cycles = cpu.executeOpcode(0xC9);
 
@@ -249,8 +250,8 @@ TEST_CASE_METHOD(CPUTest, "0xC0-0xD8:(RET cc) taken pops PC, 5 cycles; not taken
 
     seedRegisters(cpu, flags);
     cpu.SP = 0xDFEE;
-    cpu.memory[0xDFEE] = 0x34;
-    cpu.memory[0xDFEF] = 0x12;
+    memory[0xDFEE] = 0x34;
+    memory[0xDFEF] = 0x12;
     CPU expected = cpu;
 
     const int cycles = cpu.executeOpcode(op);
@@ -267,8 +268,8 @@ TEST_CASE_METHOD(CPUTest, "0xD9:(RETI) pops PC, SP +2, sets IME immediately, 4 c
     seedRegisters(cpu, flags);
     cpu.ime = false;
     cpu.SP = 0xDFEE;
-    cpu.memory[0xDFEE] = 0x34;
-    cpu.memory[0xDFEF] = 0x12;
+    memory[0xDFEE] = 0x34;
+    memory[0xDFEF] = 0x12;
     CPU expected = cpu;
 
     const int cycles = cpu.executeOpcode(0xD9);
@@ -282,9 +283,9 @@ TEST_CASE_METHOD(CPUTest, "0xD9:(RETI) pops PC, SP +2, sets IME immediately, 4 c
 
 TEST_CASE_METHOD(CPUTest, "0xCD/0xC9:(CALL then RET) round-trip returns to the instruction after CALL") {
     seedRegisters(cpu, 0xF0);
-    cpu.memory[0x0200] = 0xCD;
-    write16(cpu, 0x0201, 0x4000);
-    cpu.memory[0x4000] = 0xC9;
+    memory[0x0200] = 0xCD;
+    write16(memory, 0x0201, 0x4000);
+    memory[0x4000] = 0xC9;
 
     REQUIRE(cpu.step() == 6);
     REQUIRE(cpu.PC == 0x4000);
@@ -312,8 +313,8 @@ TEST_CASE_METHOD(CPUTest, "0xC7-0xFF:(RST n) pushes PC+1, jumps to n*8, 4 cycles
 
     REQUIRE(cpu.PC == n * 8);
     REQUIRE(cpu.SP == 0xDFEE);
-    REQUIRE(cpu.memory[0xDFEE] == 0x00);
-    REQUIRE(cpu.memory[0xDFEF] == 0x13);
+    REQUIRE(memory[0xDFEE] == 0x00);
+    REQUIRE(memory[0xDFEF] == 0x13);
     requireRegsUnchanged(cpu, expected);
     REQUIRE(cycles == 4);
 }
@@ -331,13 +332,14 @@ TEST_CASE_METHOD(CPUTest, "0xC5-0xF5:(PUSH rr) high at SP+1, low at SP, SP -2, 4
     seedRegisters(cpu, flags);
     const std::uint16_t value = pairRef(cpu, p);
     CPU expected = cpu;
+    const FlatMemory expectedMemory = memory;
 
     const int cycles = cpu.executeOpcode(op);
 
     REQUIRE(cpu.SP == 0xDFEE);
-    REQUIRE(cpu.memory[0xDFEE] == lowByte(value));
-    REQUIRE(cpu.memory[0xDFEF] == highByte(value));
-    REQUIRE(cpu.memory[0xDFF0] == expected.memory[0xDFF0]);
+    REQUIRE(memory[0xDFEE] == lowByte(value));
+    REQUIRE(memory[0xDFEF] == highByte(value));
+    REQUIRE(memory[0xDFF0] == expectedMemory[0xDFF0]);
     REQUIRE(cpu.PC == 0x0201);
     requireRegsUnchanged(cpu, expected);
     REQUIRE(cycles == 4);
@@ -350,8 +352,8 @@ TEST_CASE_METHOD(CPUTest, "0xC5:(PUSH BC) SP wraps below 0x0000") {
     const int cycles = cpu.executeOpcode(0xC5);
 
     REQUIRE(cpu.SP == 0xFFFF);
-    REQUIRE(cpu.memory[0xFFFF] == 0xC3);
-    REQUIRE(cpu.memory[0x0000] == 0xB2);
+    REQUIRE(memory[0xFFFF] == 0xC3);
+    REQUIRE(memory[0x0000] == 0xB2);
     REQUIRE(cycles == 4);
 }
 
@@ -363,8 +365,8 @@ TEST_CASE_METHOD(CPUTest, "0xC1-0xE1:(POP BC/DE/HL) low from SP, high from SP+1,
 
     seedRegisters(cpu, flags);
     cpu.SP = 0xDFEE;
-    cpu.memory[0xDFEE] = 0x5A;
-    cpu.memory[0xDFEF] = 0x3C;
+    memory[0xDFEE] = 0x5A;
+    memory[0xDFEF] = 0x3C;
     CPU expected = cpu;
     pairRef(expected, p) = 0x3C5A;
 
@@ -392,8 +394,8 @@ TEST_CASE_METHOD(CPUTest, "0xF1:(POP AF) A from SP+1, F from SP with lower nibbl
 
     seedRegisters(cpu, initialF);
     cpu.SP = 0xDFEE;
-    cpu.memory[0xDFEE] = lo;
-    cpu.memory[0xDFEF] = 0x7E;
+    memory[0xDFEE] = lo;
+    memory[0xDFEF] = 0x7E;
     CPU expected = cpu;
 
     const int cycles = cpu.executeOpcode(0xF1);
@@ -414,10 +416,10 @@ TEST_CASE_METHOD(CPUTest, "0xC5-0xF1:(PUSH rr then POP rr) round-trip restores t
     seedRegisters(cpu, 0xB0);
     const std::uint16_t value = pairRef(cpu, p);
 
-    cpu.memory[0x0200] = static_cast<std::uint8_t>(0xC5 | (p << 4)); // PUSH
+    memory[0x0200] = static_cast<std::uint8_t>(0xC5 | (p << 4)); // PUSH
     REQUIRE(cpu.step() == 4);
     pairRef(cpu, p) = (p == 3) ? 0x0000 : 0x1111; // clobber
-    cpu.memory[cpu.PC] = static_cast<std::uint8_t>(0xC1 | (p << 4)); // POP
+    memory[cpu.PC] = static_cast<std::uint8_t>(0xC1 | (p << 4)); // POP
     REQUIRE(cpu.step() == 3);
 
     REQUIRE(pairRef(cpu, p) == value);
@@ -427,12 +429,12 @@ TEST_CASE_METHOD(CPUTest, "0xC5-0xF1:(PUSH rr then POP rr) round-trip restores t
 
 TEST_CASE_METHOD(CPUTest, "0xF5/0xC1:(PUSH AF, POP BC) stack holds A at SP+1 and F at SP") {
     seedRegisters(cpu, 0xA0);
-    cpu.memory[0x0200] = 0xF5;
-    cpu.memory[0x0201] = 0xC1;
+    memory[0x0200] = 0xF5;
+    memory[0x0201] = 0xC1;
 
     REQUIRE(cpu.step() == 4);
-    REQUIRE(cpu.memory[0xDFEE] == 0xA0);
-    REQUIRE(cpu.memory[0xDFEF] == 0xA1);
+    REQUIRE(memory[0xDFEE] == 0xA0);
+    REQUIRE(memory[0xDFEF] == 0xA1);
     REQUIRE(cpu.step() == 3);
     REQUIRE(cpu.BC == 0xA1A0);
     REQUIRE(cpu.SP == 0xDFF0);
@@ -448,14 +450,15 @@ TEST_CASE_METHOD(CPUTest, "0xE0:(LDH (a8), A) writes A to 0xFF00+a8, PC +2, 3 cy
     CAPTURE(a8, flags);
     seedRegisters(cpu, flags);
     setA(cpu, 0x5C);
-    cpu.memory[0x0201] = a8;
+    memory[0x0201] = a8;
     const std::uint16_t addr = static_cast<std::uint16_t>(0xFF00 + a8);
     CPU expected = cpu;
+    const FlatMemory expectedMemory = memory;
 
     const int cycles = cpu.executeOpcode(0xE0);
 
-    REQUIRE(cpu.memory[addr] == 0x5C);
-    REQUIRE(cpu.memory[a8] == expected.memory[a8]);
+    REQUIRE(memory[addr] == 0x5C);
+    REQUIRE(memory[a8] == expectedMemory[a8]);
     REQUIRE(cpu.PC == 0x0202);
     REQUIRE(cpu.SP == expected.SP);
     requireRegsUnchanged(cpu, expected);
@@ -467,9 +470,9 @@ TEST_CASE_METHOD(CPUTest, "0xF0:(LDH A, (a8)) reads A from 0xFF00+a8, PC +2, 3 c
     const std::uint8_t flags = GENERATE(std::uint8_t{0x00}, std::uint8_t{0xF0});
     CAPTURE(a8, flags);
     seedRegisters(cpu, flags);
-    cpu.memory[0x0201] = a8;
-    cpu.memory[static_cast<std::uint16_t>(0xFF00 + a8)] = 0x6D;
-    cpu.memory[a8] = 0x11; // low-page alias, must not be read
+    memory[0x0201] = a8;
+    memory[static_cast<std::uint16_t>(0xFF00 + a8)] = 0x6D;
+    memory[a8] = 0x11; // low-page alias, must not be read
     CPU expected = cpu;
     setA(expected, 0x6D);
 
@@ -489,13 +492,14 @@ TEST_CASE_METHOD(CPUTest, "0xE2:(LD (C), A) writes A to 0xFF00+C, PC +1, 2 cycle
     seedRegisters(cpu, flags);
     setA(cpu, 0x5C);
     setC(cpu, c);
-    cpu.memory[0x0201] = 0x33; // must not be used as an operand
+    memory[0x0201] = 0x33; // must not be used as an operand
     CPU expected = cpu;
+    const FlatMemory expectedMemory = memory;
 
     const int cycles = cpu.executeOpcode(0xE2);
 
-    REQUIRE(cpu.memory[static_cast<std::uint16_t>(0xFF00 + c)] == 0x5C);
-    REQUIRE(cpu.memory[static_cast<std::uint16_t>(0xFF33)] == expected.memory[0xFF33]);
+    REQUIRE(memory[static_cast<std::uint16_t>(0xFF00 + c)] == 0x5C);
+    REQUIRE(memory[static_cast<std::uint16_t>(0xFF33)] == expectedMemory[0xFF33]);
     REQUIRE(cpu.PC == 0x0201);
     REQUIRE(cpu.SP == expected.SP);
     requireRegsUnchanged(cpu, expected);
@@ -508,8 +512,8 @@ TEST_CASE_METHOD(CPUTest, "0xF2:(LD A, (C)) reads A from 0xFF00+C, PC +1, 2 cycl
     CAPTURE(c, flags);
     seedRegisters(cpu, flags);
     setC(cpu, c);
-    cpu.memory[static_cast<std::uint16_t>(0xFF00 + c)] = 0x6D;
-    cpu.memory[c] = 0x11;
+    memory[static_cast<std::uint16_t>(0xFF00 + c)] = 0x6D;
+    memory[c] = 0x11;
     CPU expected = cpu;
     setA(expected, 0x6D);
 
@@ -529,13 +533,14 @@ TEST_CASE_METHOD(CPUTest, "0xEA:(LD (a16), A) writes A to little-endian a16, PC 
     CAPTURE(addr, flags);
     seedRegisters(cpu, flags);
     setA(cpu, 0x5C);
-    write16(cpu, 0x0201, addr);
+    write16(memory, 0x0201, addr);
     CPU expected = cpu;
+    const FlatMemory expectedMemory = memory;
 
     const int cycles = cpu.executeOpcode(0xEA);
 
-    REQUIRE(cpu.memory[addr] == 0x5C);
-    if (addr != 0x3412) { REQUIRE(cpu.memory[0x3412] == expected.memory[0x3412]); } // byte-swapped address
+    REQUIRE(memory[addr] == 0x5C);
+    if (addr != 0x3412) { REQUIRE(memory[0x3412] == expectedMemory[0x3412]); } // byte-swapped address
     REQUIRE(cpu.PC == 0x0203);
     REQUIRE(cpu.SP == expected.SP);
     requireRegsUnchanged(cpu, expected);
@@ -548,9 +553,9 @@ TEST_CASE_METHOD(CPUTest, "0xFA:(LD A, (a16)) reads A from little-endian a16, PC
     const std::uint8_t flags = GENERATE(std::uint8_t{0x00}, std::uint8_t{0xF0});
     CAPTURE(addr, flags);
     seedRegisters(cpu, flags);
-    write16(cpu, 0x0201, addr);
-    cpu.memory[addr] = 0x6D;
-    if (addr != 0x3412) cpu.memory[0x3412] = 0x11; // byte-swapped address, must not be read
+    write16(memory, 0x0201, addr);
+    memory[addr] = 0x6D;
+    if (addr != 0x3412) memory[0x3412] = 0x11; // byte-swapped address, must not be read
     CPU expected = cpu;
     setA(expected, 0x6D);
 
@@ -620,7 +625,7 @@ TEST_CASE_METHOD(CPUTest, "0xE8:(ADD SP, e8) signed add, Z=0 N=0, H/C from low b
 
     seedRegisters(cpu, initialF);
     cpu.SP = tc.sp;
-    cpu.memory[0x0201] = tc.e;
+    memory[0x0201] = tc.e;
     CPU expected = cpu;
 
     const int cycles = cpu.executeOpcode(0xE8);
@@ -642,7 +647,7 @@ TEST_CASE_METHOD(CPUTest, "0xF8:(LD HL, SP+e8) HL = SP + e, SP unchanged, Z=0 N=
 
     seedRegisters(cpu, initialF);
     cpu.SP = tc.sp;
-    cpu.memory[0x0201] = tc.e;
+    memory[0x0201] = tc.e;
     CPU expected = cpu;
 
     const int cycles = cpu.executeOpcode(0xF8);
@@ -704,9 +709,9 @@ TEST_CASE_METHOD(CPUTest, "0xFB:(EI) PC +1, 1 cycle, flags unchanged") {
 
 TEST_CASE_METHOD(CPUTest, "0xFB:(EI) IME is set only after the following instruction (step)") {
     seedRegisters(cpu, 0);
-    cpu.memory[0x0200] = 0xFB; // EI
-    cpu.memory[0x0201] = 0x00; // NOP
-    cpu.memory[0x0202] = 0x00; // NOP
+    memory[0x0200] = 0xFB; // EI
+    memory[0x0201] = 0x00; // NOP
+    memory[0x0202] = 0x00; // NOP
 
     REQUIRE(cpu.step() == 1);
     REQUIRE(cpu.PC == 0x0201);
@@ -720,10 +725,10 @@ TEST_CASE_METHOD(CPUTest, "0xFB:(EI) IME is set only after the following instruc
 
 TEST_CASE_METHOD(CPUTest, "0xFB/0xF3:(EI then DI) IME stays false") {
     seedRegisters(cpu, 0);
-    cpu.memory[0x0200] = 0xFB; // EI
-    cpu.memory[0x0201] = 0xF3; // DI
-    cpu.memory[0x0202] = 0x00; // NOP
-    cpu.memory[0x0203] = 0x00; // NOP
+    memory[0x0200] = 0xFB; // EI
+    memory[0x0201] = 0xF3; // DI
+    memory[0x0202] = 0x00; // NOP
+    memory[0x0203] = 0x00; // NOP
 
     cpu.step();
     REQUIRE_FALSE(cpu.ime);
@@ -739,8 +744,8 @@ TEST_CASE_METHOD(CPUTest, "0xFB/0xF3:(EI then DI) IME stays false") {
 TEST_CASE_METHOD(CPUTest, "0xD9:(RETI) via step sets IME right after the instruction") {
     seedRegisters(cpu, 0);
     cpu.SP = 0xDFEE;
-    write16(cpu, 0xDFEE, 0x3000);
-    cpu.memory[0x0200] = 0xD9;
+    write16(memory, 0xDFEE, 0x3000);
+    memory[0x0200] = 0xD9;
 
     REQUIRE(cpu.step() == 4);
     REQUIRE(cpu.PC == 0x3000);
@@ -759,9 +764,9 @@ TEST_CASE_METHOD(CPUTest, "0xD3-0xFD:(illegal) sets locked; further steps do not
     CAPTURE(op, flags);
 
     seedRegisters(cpu, flags);
-    cpu.memory[0x0200] = op;
-    cpu.memory[0x0201] = 0x3C; // INC A, must never run
-    cpu.memory[0x0202] = 0x04; // INC B
+    memory[0x0200] = op;
+    memory[0x0201] = 0x3C; // INC A, must never run
+    memory[0x0202] = 0x04; // INC B
     CPU expected = cpu;
 
     REQUIRE_FALSE(cpu.locked);

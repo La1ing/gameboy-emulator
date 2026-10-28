@@ -1,7 +1,8 @@
 #ifndef CPU_HPP
 #define CPU_HPP
 
-#include <array>
+#include "MemoryBus.hpp"
+
 #include <cstdint>
 
 /*
@@ -62,11 +63,10 @@ public:
 	[[nodiscard]] constexpr std::uint8_t H() const noexcept { return highByte(HL); } // Higher register of HL (HL+)
 	[[nodiscard]] constexpr std::uint8_t L() const noexcept { return lowByte(HL); } // Lower register of HL (HL-)
 
-	// Memory
-	std::array<std::uint8_t, 0x10000> memory{}; // 16 bit address bus
+	explicit CPU(MemoryBus &bus) noexcept : bus(bus) {}
 
-	// Reads memory; addresses wrap around at 16 bits (e.g. PC + 1 when PC = 0xFFFF)
-	[[nodiscard]] std::uint8_t readByte(std::uint16_t addr) const noexcept { return memory[addr]; }
+	// Reads memory through the bus; addresses wrap around at 16 bits (e.g. PC + 1 when PC = 0xFFFF)
+	[[nodiscard]] std::uint8_t readByte(std::uint16_t addr) const noexcept { return bus.read(addr); }
 
 	void initialize();
 
@@ -88,6 +88,8 @@ public:
 	int executeOpcode(std::uint16_t opcode);
 
 private:
+	MemoryBus &bus; // 16 bit address bus
+
 	bool imePending{}; // EI was executed; IME is set after the next instruction
 	bool haltBug{}; // HALT ran with IME unset and an interrupt pending; next byte is read twice
 
